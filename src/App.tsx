@@ -84,6 +84,16 @@ export default function App() {
     }
   }, [planningBounds, currentViewBounds]);
 
+  useEffect(() => {
+    setZones((prev) =>
+      prev.map((zone) => {
+        if (zone.type !== 'NO_FLY') return zone;
+        const buffered = turf.buffer(zone.shape as any, noFlyBufferM, { units: 'meters' }) as any;
+        return { ...zone, buffered };
+      })
+    );
+  }, [noFlyBufferM]);
+
   async function reloadAlgorithms() {
     try {
       setAlgoError(null);
@@ -447,9 +457,19 @@ export default function App() {
         <div className="section">
           <label>Drawing mode</label>
           <select value={drawZoneType} onChange={(e) => setDrawZoneType(e.target.value as ZoneType)}>
-            <option value="NO_FLY">No-fly zone (10m buffer)</option>
+            <option value="NO_FLY">No-fly zone ({noFlyBufferM}m buffer)</option>
             <option value="COST">Cost zone (multiplier)</option>
           </select>
+          <label>No-fly buffer (meters)</label>
+          <input
+            type="range"
+            min={0}
+            max={50}
+            step={1}
+            value={noFlyBufferM}
+            onChange={(e) => setNoFlyBufferM(parseInt(e.target.value, 10))}
+          />
+          <div className="small">{noFlyBufferM} m</div>
 
           {drawZoneType === 'COST' ? (
             <>
