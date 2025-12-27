@@ -105,6 +105,7 @@ export default function App() {
   const [showVisited, setShowVisited] = useState<boolean>(false);
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
   const [useShortcutting, setUseShortcutting] = useState<boolean>(false);
+  const [shortcuttingMultiplierTolerance, setShortcuttingMultiplierTolerance] = useState<number>(0);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
   const [runResult, setRunResult] = useState<{
@@ -228,8 +229,10 @@ export default function App() {
   const pathCells = useMemo<number[]>(() => {
     if (!runResult?.res.path || runResult.res.path.length === 0) return [];
     if (!raster.env) return [];
-    return useShortcutting ? shortcutPath(raster.env, runResult.res.path) : runResult.res.path;
-  }, [runResult, raster.env, useShortcutting]);
+    return useShortcutting
+      ? shortcutPath(raster.env, runResult.res.path, shortcuttingMultiplierTolerance / 100)
+      : runResult.res.path;
+  }, [runResult, raster.env, useShortcutting, shortcuttingMultiplierTolerance]);
 
   const pathLatLngs = useMemo<LatLng[]>(() => {
     if (pathCells.length === 0) return [];
@@ -834,6 +837,19 @@ export default function App() {
             Shortcutting uses line-of-sight checks to merge zig-zags into longer straight segments while
             still respecting no-fly zones and boundaries.
           </div>
+          <label>Shortcutting multiplier tolerance</label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={shortcuttingMultiplierTolerance}
+            onChange={(e) => setShortcuttingMultiplierTolerance(parseInt(e.target.value, 10))}
+            disabled={!useShortcutting}
+          />
+          <div className="small">
+            Allow up to {shortcuttingMultiplierTolerance}% of each shortcut segment to pass through multiplier zones.
+          </div>
           <label>
             <input
               type="checkbox"
@@ -1151,14 +1167,15 @@ function computePathLengthM(env: any, path: number[]): number {
   return total;
 }
 
-function shortcutPath(env: GridEnvironment, path: number[]): number[] {
+function shortcutPath(env: GridEnvironment, path: number[], multiplierTolerance: number): number[] {
   if (path.length <= 2) return path.slice();
   const output: number[] = [path[0]];
+  const tolerance = clamp(multiplierTolerance, 0, 1);
   let i = 0;
   while (i < path.length - 1) {
     let nextIndex = i + 1;
     for (let j = path.length - 1; j > i + 1; j -= 1) {
-      if (hasLineOfSight(env, path[i], path[j])) {
+      if (hasLineOfSight(env, path[i], path[j], tolerance)) {
         nextIndex = j;
         break;
       }
@@ -1169,7 +1186,12 @@ function shortcutPath(env: GridEnvironment, path: number[]): number[] {
   return output;
 }
 
-function hasLineOfSight(env: GridEnvironment, fromId: number, toId: number): boolean {
+function hasLineOfSight(
+  env: GridEnvironment,
+  fromId: number,
+  toId: number,
+  multiplierTolerance: number
+): boolean {
   let { col: x0, row: y0 } = env.colRow(fromId);
   const { col: x1, row: y1 } = env.colRow(toId);
   const dx = Math.abs(x1 - x0);
@@ -1177,11 +1199,19 @@ function hasLineOfSight(env: GridEnvironment, fromId: number, toId: number): boo
   const sx = x0 < x1 ? 1 : -1;
   const sy = y0 < y1 ? 1 : -1;
   let err = dx - dy;
+  let multiplierCells = 0;
+  let totalCells = 0;
 
   while (true) {
     if (!env.inBounds(x0, y0)) return false;
     const id = env.cellId(x0, y0);
-    if (!isShortcutAllowedCell(env, id)) return false;
+    if (env.isBlocked(id)) return false;
+    totalCells += 1;
+    const multiplier = env.costMultiplier[id] ?? 1;
+    if (multiplier > 1) {
+      multiplierCells += 1;
+      if (multiplierCells / totalCells > multiplierTolerance) return false;
+    }
     if (x0 === x1 && y0 === y1) return true;
     const e2 = 2 * err;
     if (e2 > -dy) {
@@ -1193,10 +1223,4 @@ function hasLineOfSight(env: GridEnvironment, fromId: number, toId: number): boo
       y0 += sy;
     }
   }
-}
-
-function isShortcutAllowedCell(env: GridEnvironment, id: number): boolean {
-  if (env.isBlocked(id)) return false;
-  const multiplier = env.costMultiplier[id] ?? 1;
-  return multiplier <= 1;
 }
