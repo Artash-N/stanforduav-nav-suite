@@ -1181,7 +1181,7 @@ function hasLineOfSight(env: GridEnvironment, fromId: number, toId: number): boo
   while (true) {
     if (!env.inBounds(x0, y0)) return false;
     const id = env.cellId(x0, y0);
-    if (env.isBlocked(id)) return false;
+    if (!isShortcutAllowedCell(env, id)) return false;
     if (x0 === x1 && y0 === y1) return true;
     const e2 = 2 * err;
     if (e2 > -dy) {
@@ -1193,4 +1193,10 @@ function hasLineOfSight(env: GridEnvironment, fromId: number, toId: number): boo
       y0 += sy;
     }
   }
+}
+
+function isShortcutAllowedCell(env: GridEnvironment, id: number): boolean {
+  if (env.isBlocked(id)) return false;
+  const multiplier = env.costMultiplier[id] ?? 1;
+  return multiplier <= 1;
 }
