@@ -189,6 +189,10 @@ class CanvasCostHeatmapLeafletLayer extends L.Layer {
     const maxDrawCells = 60000;
     const drawStride = Math.max(1, Math.ceil(totalCells / maxDrawCells));
 
+    const cellRadiusPx = this.estimateCellRadiusPx(topLeft);
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'lighter';
+
     for (let id = 0; id < totalCells; id += drawStride) {
       if (this.env.isBlocked(id)) continue;
       const value = this.env.costMultiplier[id] ?? 1;
@@ -199,11 +203,30 @@ class CanvasCostHeatmapLeafletLayer extends L.Layer {
       const { lat, lng } = mercatorToLonLat(xM, yM);
       const pt = this.map.latLngToLayerPoint([lat, lng]).subtract(topLeft);
 
-      const color = heatmapColor(normalized);
-      this.ctx.fillStyle = color;
-      this.ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+      const { r, g, b, a } = heatmapColor(normalized);
+      const radius = cellRadiusPx * (0.8 + normalized * 1.4);
+      const gradient = this.ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, radius);
+      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`);
+      gradient.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${(a * 0.45).toFixed(3)})`);
+      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+      this.ctx.fillStyle = gradient;
+      this.ctx.fillRect(pt.x - radius, pt.y - radius, radius * 2, radius * 2);
     }
+
+    this.ctx.restore();
   };
+
+  private estimateCellRadiusPx(topLeft: L.Point): number {
+    if (!this.map || !this.env) return 6;
+    const { minX, minY } = this.env.bounds;
+    const { cellSizeM } = this.env;
+    const base = mercatorToLonLat(minX + cellSizeM * 0.5, minY + cellSizeM * 0.5);
+    const offset = mercatorToLonLat(minX + cellSizeM * 1.5, minY + cellSizeM * 0.5);
+    const basePt = this.map.latLngToLayerPoint([base.lat, base.lng]).subtract(topLeft);
+    const offsetPt = this.map.latLngToLayerPoint([offset.lat, offset.lng]).subtract(topLeft);
+    const cellSizePx = Math.max(4, basePt.distanceTo(offsetPt));
+    return Math.max(6, cellSizePx * 1.1);
+  }
 }
 
 export function CanvasCellsLayer(props: {
@@ -273,13 +296,13 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function heatmapColor(normalized: number): string {
+function heatmapColor(normalized: number): { r: number; g: number; b: number; a: number } {
   const start = { r: 0, g: 120, b: 255 };
   const end = { r: 255, g: 0, b: 0 };
   const t = clamp01(normalized);
   const r = Math.round(start.r + (end.r - start.r) * t);
   const g = Math.round(start.g + (end.g - start.g) * t);
   const b = Math.round(start.b + (end.b - start.b) * t);
-  const alpha = 0.05 + 0.5 * t;
-  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+  const alpha = 0.08 + 0.55 * t;
+  return { r, g, b, a: alpha };
 }
