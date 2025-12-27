@@ -213,7 +213,15 @@ export default function App() {
     });
 
     return { env, cellCount, error: null as string | null };
-  }, [costZoneTypes, planningBounds, resolutionM, zones]);
+  }, [
+    avoidHighMultiplier,
+    costZoneTypes,
+    planningBounds,
+    resolutionM,
+    rolloffDistanceM,
+    rolloffStrength,
+    zones
+  ]);
 
   // If the grid definition changes, any previously returned path/visited cell IDs
   // are no longer meaningful. Clear the visualization to avoid confusing results.
