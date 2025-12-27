@@ -33,10 +33,9 @@ export function rasterizeZonesToGrid(params: {
   zones: Zone[];
   costZoneTypes: CostZoneType[];
   avoidHighMultiplier: boolean;
-  rolloffStrength: number;
   rolloffDistanceM: number;
 }): RasterizeResult {
-  const { cellSizeM, bounds, zones, costZoneTypes, avoidHighMultiplier, rolloffStrength, rolloffDistanceM } = params;
+  const { cellSizeM, bounds, zones, costZoneTypes, avoidHighMultiplier, rolloffDistanceM } = params;
   const costTypeById = new Map(costZoneTypes.map((type) => [type.id, type]));
 
   const width = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / cellSizeM));
@@ -46,6 +45,7 @@ export function rasterizeZonesToGrid(params: {
   const blocked = new Uint8Array(cellCount);
   const costMultiplier = new Float32Array(cellCount);
   costMultiplier.fill(1);
+  const costZoneMask = new Uint8Array(cellCount);
 
   // Precompute mercator polygons + bboxes per zone to speed up rasterization.
   const compiled = zones.map((z) => {
@@ -79,12 +79,13 @@ export function rasterizeZonesToGrid(params: {
           const type = costTypeById.get(z.costTypeId);
           const multiplier = type?.multiplier ?? 1;
           costMultiplier[id] *= multiplier;
+          costZoneMask[id] = 1;
         }
       }
     }
   }
 
-  if (avoidHighMultiplier && rolloffStrength > 0 && rolloffDistanceM > 0) {
+  if (avoidHighMultiplier && rolloffDistanceM > 0) {
     const highCostZones = compiled
       .filter((entry) => entry.zone.type === 'COST')
       .map((entry) => {
@@ -93,6 +94,9 @@ export function rasterizeZonesToGrid(params: {
         return { ...entry, multiplier };
       })
       .filter((entry) => entry.multiplier > 1);
+
+    const rolloffSum = new Float32Array(cellCount);
+    const rolloffCount = new Uint16Array(cellCount);
 
     for (const entry of highCostZones) {
       const { bbox, polys, multiplier } = entry;
@@ -122,17 +126,28 @@ export function rasterizeZonesToGrid(params: {
         const base = row * width;
         for (let col = minCol; col <= maxCol; col++) {
           const id = base + col;
-          if (blocked[id] === 1) continue;
+          if (blocked[id] === 1 || costZoneMask[id] === 1) continue;
           const xM = bounds.minX + (col + 0.5) * cellSizeM;
           if (pointInAnyPolygon(xM, yM, polys)) continue;
           const distance = minDistanceToRings(xM, yM, polys);
           if (!Number.isFinite(distance) || distance > rolloffDistanceM) continue;
-          const falloff = 1 - distance / rolloffDistanceM;
-          const factor = 1 + (multiplier - 1) * rolloffStrength * falloff;
+          const normalized = clamp01(distance / rolloffDistanceM);
+          const falloff = 1 - normalized;
+          const factor = 1 + (multiplier - 1) * falloff;
           if (factor > 1) {
-            costMultiplier[id] *= factor;
+            rolloffSum[id] += factor;
+            rolloffCount[id] += 1;
           }
         }
+      }
+    }
+
+    for (let id = 0; id < cellCount; id += 1) {
+      const count = rolloffCount[id];
+      if (count === 0 || blocked[id] === 1) continue;
+      const avgFactor = rolloffSum[id] / count;
+      if (avgFactor > 1) {
+        costMultiplier[id] *= avgFactor;
       }
     }
   }
@@ -153,6 +168,11 @@ function clampInt(v: number, min: number, max: number): number {
   if (v < min) return min;
   if (v > max) return max;
   return v;
+}
+
+function clamp01(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
 }
 
 function minDistanceToRings(x: number, y: number, polys: Rings[]): number {
