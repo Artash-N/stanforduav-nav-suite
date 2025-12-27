@@ -8,6 +8,7 @@ import { MapView } from './components/MapView';
 import type { CostZoneType, LatLng, LatLngBounds, Zone, PathRunMetrics } from './types';
 import { lonLatToMercator, mercatorToLonLat } from './geo/mercator';
 import { latLngBoundsToMercatorBounds, rasterizeZonesToGrid } from './env/rasterize';
+import type { GridEnvironment } from './env/GridEnvironment';
 
 const MAX_CELLS = 250000; // performance guardrail
 const DEFAULT_NO_FLY_BUFFER_M = 10;
@@ -103,6 +104,8 @@ export default function App() {
 
   const [showVisited, setShowVisited] = useState<boolean>(false);
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
+  const [useShortcutting, setUseShortcutting] = useState<boolean>(false);
+  const [shortcutCostTolerance, setShortcutCostTolerance] = useState<number>(0);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
   const [runResult, setRunResult] = useState<{
@@ -223,20 +226,28 @@ export default function App() {
     setRunResult(null);
   }, [planningBounds, resolutionM, zones]);
 
-  const pathLatLngs = useMemo<LatLng[]>(() => {
+  const pathCells = useMemo<number[]>(() => {
     if (!runResult?.res.path || runResult.res.path.length === 0) return [];
     if (!raster.env) return [];
-    return runResult.res.path.map((id) => {
+    return useShortcutting
+      ? shortcutPath(raster.env, runResult.res.path, shortcutCostTolerance)
+      : runResult.res.path;
+  }, [runResult, raster.env, shortcutCostTolerance, useShortcutting]);
+
+  const pathLatLngs = useMemo<LatLng[]>(() => {
+    if (pathCells.length === 0) return [];
+    if (!raster.env) return [];
+    return pathCells.map((id) => {
       const { xM, yM } = raster.env.cellCenter(id);
       const { lat, lng } = mercatorToLonLat(xM, yM);
       return { lat, lng };
     });
-  }, [runResult, raster.env]);
+  }, [pathCells, raster.env]);
 
   const metrics = useMemo<PathRunMetrics | null>(() => {
     if (!runResult || !raster.env) return null;
     const { res, runtimeMs, algo } = runResult;
-    const pathLengthM = computePathLengthM(raster.env, res.path);
+    const pathLengthM = computePathLengthM(raster.env, pathCells);
     return {
       algorithmId: algo.id,
       algorithmName: algo.name,
@@ -245,7 +256,7 @@ export default function App() {
       pathLengthM,
       cost: res.cost
     };
-  }, [runResult, raster.env]);
+  }, [pathCells, raster.env, runResult]);
 
   function onZoneCreated(zoneId: string, shape: Feature<Polygon | MultiPolygon>) {
     setZones((prev) => {
@@ -816,6 +827,33 @@ export default function App() {
           <label>
             <input
               type="checkbox"
+              checked={useShortcutting}
+              onChange={(e) => setUseShortcutting(e.target.checked)}
+              style={{ width: 'auto', marginRight: 8 }}
+            />
+            Apply shortcutting (string pulling)
+          </label>
+          <div className="small">
+            Shortcutting uses line-of-sight checks to merge zig-zags into longer straight segments while
+            still respecting no-fly zones and boundaries.
+          </div>
+          <label>Shortcutting cost-zone tolerance</label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={shortcutCostTolerance}
+            onChange={(e) => setShortcutCostTolerance(parseInt(e.target.value, 10))}
+            disabled={!useShortcutting}
+          />
+          <div className="small">
+            Allow up to <b>{shortcutCostTolerance}%</b> of a shortcut segment to pass through multiplier zones.
+            No-fly zones remain forbidden.
+          </div>
+          <label>
+            <input
+              type="checkbox"
               checked={showCostHeatmap}
               onChange={(e) => setShowCostHeatmap(e.target.checked)}
               style={{ width: 'auto', marginRight: 8 }}
@@ -871,7 +909,7 @@ export default function App() {
 
         env={raster.env ? raster.env : null}
         visited={runResult?.res.visited ?? []}
-        pathCells={runResult?.res.path ?? []}
+        pathCells={pathCells}
         pathLatLngs={pathLatLngs}
         showVisited={showVisited}
         showCostHeatmap={showCostHeatmap}
@@ -1128,4 +1166,60 @@ function computePathLengthM(env: any, path: number[]): number {
     total += Math.hypot(a.xM - b.xM, a.yM - b.yM);
   }
   return total;
+}
+
+function shortcutPath(env: GridEnvironment, path: number[], costTolerancePct: number): number[] {
+  if (path.length <= 2) return path.slice();
+  const output: number[] = [path[0]];
+  let i = 0;
+  while (i < path.length - 1) {
+    let nextIndex = i + 1;
+    for (let j = path.length - 1; j > i + 1; j -= 1) {
+      if (hasLineOfSight(env, path[i], path[j], costTolerancePct)) {
+        nextIndex = j;
+        break;
+      }
+    }
+    output.push(path[nextIndex]);
+    i = nextIndex;
+  }
+  return output;
+}
+
+function hasLineOfSight(env: GridEnvironment, fromId: number, toId: number, costTolerancePct: number): boolean {
+  let { col: x0, row: y0 } = env.colRow(fromId);
+  const { col: x1, row: y1 } = env.colRow(toId);
+  const dx = Math.abs(x1 - x0);
+  const dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+  let total = 0;
+  let costZoneCount = 0;
+  const tolerance = clamp(costTolerancePct, 0, 100) / 100;
+
+  while (true) {
+    if (!env.inBounds(x0, y0)) return false;
+    const id = env.cellId(x0, y0);
+    if (env.isBlocked(id)) return false;
+    total += 1;
+    if (isCostZoneCell(env, id)) costZoneCount += 1;
+    if (x0 === x1 && y0 === y1) {
+      return total > 0 ? costZoneCount / total <= tolerance : true;
+    }
+    const e2 = 2 * err;
+    if (e2 > -dy) {
+      err -= dy;
+      x0 += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+}
+
+function isCostZoneCell(env: GridEnvironment, id: number): boolean {
+  const multiplier = env.costMultiplier[id] ?? 1;
+  return multiplier > 1;
 }
