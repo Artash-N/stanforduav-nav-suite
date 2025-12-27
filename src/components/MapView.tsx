@@ -34,6 +34,7 @@ export function MapView(props: {
   pathCells: number[];
   pathLatLngs: LatLng[];
   waypointLatLngs: LatLng[];
+  waypointColor: string;
   showVisited: boolean;
   showCostHeatmap: boolean;
   showWaypoints: boolean;
@@ -124,10 +125,10 @@ export function MapView(props: {
   }, []);
 
   const waypointIcon = useMemo(() => {
-    return (label: string) =>
+    return (label: string, color: string) =>
       L.divIcon({
         className: 'marker marker-waypoint',
-        html: `<div class="marker-inner">${label}</div>`,
+        html: `<div class="marker-inner" style="background: ${color};">${label}</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14]
       });
@@ -232,7 +233,7 @@ export function MapView(props: {
             <Marker
               key={`wp-${index}-${point.lat.toFixed(5)}-${point.lng.toFixed(5)}`}
               position={[point.lat, point.lng]}
-              icon={waypointIcon(`WP${index + 1}`)}
+              icon={waypointIcon(`WP${index + 1}`, props.waypointColor)}
             />
           ))
         : null}

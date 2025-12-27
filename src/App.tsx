@@ -77,6 +77,15 @@ const DEFAULT_COST_ZONE_TYPES: CostZoneType[] = [
 ];
 const DEFAULT_AVOID_HIGH_MULTIPLIER = false;
 const DEFAULT_ROLLOFF_DISTANCE_M = 50;
+const WAYPOINT_COLOR_OPTIONS = [
+  { name: 'Light purple', color: '#b197fc' },
+  { name: 'Blue', color: '#339af0' },
+  { name: 'Magenta', color: '#d6336c' },
+  { name: 'Teal', color: '#12b886' },
+  { name: 'Orange', color: '#f08c00' },
+  { name: 'Green', color: '#2f9e44' }
+];
+const DEFAULT_WAYPOINT_COLOR = '#f08c00';
 
 export default function App() {
   const [resolutionM, setResolutionM] = useState<number>(10);
@@ -124,6 +133,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [newCostTypeName, setNewCostTypeName] = useState<string>('');
   const [newCostTypeMultiplier, setNewCostTypeMultiplier] = useState<number>(1.2);
+  const [waypointColor, setWaypointColor] = useState<string>(DEFAULT_WAYPOINT_COLOR);
 
   const costTypeById = useMemo(() => {
     return new Map(costZoneTypes.map((type) => [type.id, type]));
@@ -931,14 +941,31 @@ export default function App() {
           </label>
           <div className="toggle-row">
             <span>Show waypoints</span>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={showWaypoints}
-                onChange={(e) => setShowWaypoints(e.target.checked)}
-              />
-              <span className="slider" />
-            </label>
+            <div className="toggle-actions">
+              <div className="waypoint-color-control">
+                <span className="small">Color</span>
+                <select
+                  className="waypoint-color-select"
+                  value={waypointColor}
+                  onChange={(event) => setWaypointColor(event.target.value)}
+                >
+                  {WAYPOINT_COLOR_OPTIONS.map((option) => (
+                    <option key={option.color} value={option.color}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="waypoint-color-swatch" style={{ backgroundColor: waypointColor }} />
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={showWaypoints}
+                  onChange={(e) => setShowWaypoints(e.target.checked)}
+                />
+                <span className="slider" />
+              </label>
+            </div>
           </div>
 
           {metrics ? (
@@ -992,6 +1019,7 @@ export default function App() {
         pathCells={pathCells}
         pathLatLngs={pathLatLngs}
         waypointLatLngs={waypointLatLngs}
+        waypointColor={waypointColor}
         showVisited={showVisited}
         showCostHeatmap={showCostHeatmap}
         showWaypoints={showWaypoints}
