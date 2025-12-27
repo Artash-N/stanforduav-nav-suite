@@ -1,8 +1,8 @@
-# Stanford UAV Nav Suite (Navigation Team Tooling)
+# StanfordUAV Navigation Test Suite
 
-A self-hosted **webapp + Python backend** for drawing constraints on a Stanford campus map and quickly testing navigation/pathfinding algorithms on a uniform square grid.
+A self-hosted **webapp + Python backend** for drawing constraints on the Stanford campus map and testing navigation/pathfinding algorithms on a uniform square grid.
 
-The design goal is **plug-and-play algorithms**: nav team members only touch Python files in `backend/algorithms/plugins/`.
+The design goal is lug-and-play algorithms. Team members only touch Python files in `backend/algorithms/plugins/`.
 
 ---
 
