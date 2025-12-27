@@ -45,6 +45,7 @@ export function rasterizeZonesToGrid(params: {
   const blocked = new Uint8Array(cellCount);
   const costMultiplier = new Float32Array(cellCount);
   costMultiplier.fill(1);
+  const costZoneMask = new Uint8Array(cellCount);
 
   // Precompute mercator polygons + bboxes per zone to speed up rasterization.
   const compiled = zones.map((z) => {
@@ -78,6 +79,7 @@ export function rasterizeZonesToGrid(params: {
           const type = costTypeById.get(z.costTypeId);
           const multiplier = type?.multiplier ?? 1;
           costMultiplier[id] *= multiplier;
+          costZoneMask[id] = 1;
         }
       }
     }
@@ -124,7 +126,7 @@ export function rasterizeZonesToGrid(params: {
         const base = row * width;
         for (let col = minCol; col <= maxCol; col++) {
           const id = base + col;
-          if (blocked[id] === 1) continue;
+          if (blocked[id] === 1 || costZoneMask[id] === 1) continue;
           const xM = bounds.minX + (col + 0.5) * cellSizeM;
           if (pointInAnyPolygon(xM, yM, polys)) continue;
           const distance = minDistanceToRings(xM, yM, polys);
