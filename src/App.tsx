@@ -56,7 +56,15 @@ interface ParsedMapState {
   drawMode: DrawMode;
 }
 
-const COST_TYPE_COLORS = ['#2f9e44', '#fd7e14', '#845ef7', '#12b886', '#e64980', '#339af0'];
+const COST_TYPE_COLOR_OPTIONS = [
+  { name: 'Green', color: '#2f9e44' },
+  { name: 'Orange', color: '#fd7e14' },
+  { name: 'Light purple', color: '#845ef7' },
+  { name: 'Teal', color: '#12b886' },
+  { name: 'Pink', color: '#e64980' },
+  { name: 'Blue', color: '#339af0' }
+];
+const COST_TYPE_COLORS = COST_TYPE_COLOR_OPTIONS.map((option) => option.color);
 const DEFAULT_COST_ZONE_TYPES: CostZoneType[] = [
   { id: 'residential', name: 'Residential', multiplier: 1.5, color: '#fd7e14' },
   { id: 'heavy-traffic', name: 'Heavy traffic', multiplier: 2.5, color: '#e64980' },
@@ -66,6 +74,7 @@ const DEFAULT_COST_ZONE_TYPES: CostZoneType[] = [
 export default function App() {
   const [resolutionM, setResolutionM] = useState<number>(10);
   const [zones, setZones] = useState<Zone[]>([]);
+  const [activeColorPickerId, setActiveColorPickerId] = useState<string | null>(null);
 
   const [basemap, setBasemap] = useState<BasemapId>('osm');
 
@@ -558,7 +567,38 @@ export default function App() {
               const disableDelete = usageCount > 0 || costZoneTypes.length <= 1;
               return (
                 <div className="zone-type-row" key={type.id}>
-                  <span className="zone-type-color" style={{ background: type.color }} />
+                  <div className="zone-type-color-picker">
+                    <button
+                      className="zone-type-color"
+                      type="button"
+                      style={{ background: type.color }}
+                      aria-label={`Change ${type.name} color`}
+                      onClick={() =>
+                        setActiveColorPickerId((prev) => (prev === type.id ? null : type.id))
+                      }
+                    />
+                    {activeColorPickerId === type.id ? (
+                      <div className="zone-type-color-options" role="listbox" aria-label="Color options">
+                        {COST_TYPE_COLOR_OPTIONS.map((option) => (
+                          <button
+                            key={option.color}
+                            className="zone-type-color-option"
+                            type="button"
+                            style={{ background: option.color }}
+                            aria-label={option.name}
+                            onClick={() => {
+                              setCostZoneTypes((prev) =>
+                                prev.map((entry) =>
+                                  entry.id === type.id ? { ...entry, color: option.color } : entry
+                                )
+                              );
+                              setActiveColorPickerId(null);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <input
                     type="text"
                     value={type.name}
