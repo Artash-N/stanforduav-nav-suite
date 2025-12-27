@@ -2,6 +2,15 @@ import type { Feature, Polygon, MultiPolygon } from 'geojson';
 
 export type ZoneType = 'NO_FLY' | 'COST';
 
+export interface CostZoneType {
+  id: string;
+  name: string;
+  // Multiplier applied when flying through this zone type.
+  // >1 discouraged, <1 encouraged.
+  multiplier: number;
+  color: string;
+}
+
 export interface ZoneBase {
   id: string;
   name: string;
@@ -18,9 +27,7 @@ export interface NoFlyZone extends ZoneBase {
 
 export interface CostZone extends ZoneBase {
   type: 'COST';
-  // Multiplier applied when flying through this zone.
-  // >1 discouraged, <1 encouraged.
-  multiplier: number;
+  costTypeId: string;
   shape: Feature<Polygon | MultiPolygon>;
 }
 
