@@ -41,7 +41,7 @@ export function MapView(props: {
     return [37.4275, -122.1697];
   }, []);
 
-  // Apply styles when zones change (e.g. multiplier updated).
+  // Apply styles when zones or drawing settings change.
   useEffect(() => {
     if (!featureGroup) return;
 
@@ -55,15 +55,13 @@ export function MapView(props: {
 
       if (zone.type === 'NO_FLY') {
         path.setStyle({ color: '#cc0000', fillColor: '#cc0000', fillOpacity: 0.25 });
+      } else if (props.drawMode.multiplier >= 1) {
+        path.setStyle({ color: '#cc7a00', fillColor: '#cc7a00', fillOpacity: 0.20 });
       } else {
-        if (zone.multiplier >= 1) {
-          path.setStyle({ color: '#cc7a00', fillColor: '#cc7a00', fillOpacity: 0.20 });
-        } else {
-          path.setStyle({ color: '#2b8a3e', fillColor: '#2b8a3e', fillOpacity: 0.20 });
-        }
+        path.setStyle({ color: '#2b8a3e', fillColor: '#2b8a3e', fillOpacity: 0.20 });
       }
     });
-  }, [featureGroup, props.zones]);
+  }, [featureGroup, props.drawMode.multiplier, props.zones]);
 
   const planningRectBounds = useMemo(() => {
     if (!props.planningBounds) return null;

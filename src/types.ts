@@ -18,9 +18,6 @@ export interface NoFlyZone extends ZoneBase {
 
 export interface CostZone extends ZoneBase {
   type: 'COST';
-  // Multiplier applied when flying through this zone.
-  // >1 discouraged, <1 encouraged.
-  multiplier: number;
   shape: Feature<Polygon | MultiPolygon>;
 }
 

@@ -25,7 +25,6 @@ type SerializedZone =
       id: string;
       name: string;
       type: 'COST';
-      multiplier: number;
       shape: Feature<Polygon | MultiPolygon>;
     };
 
@@ -130,7 +129,8 @@ export default function App() {
     const { env } = rasterizeZonesToGrid({
       cellSizeM: resolutionM,
       bounds: boundsM,
-      zones
+      zones,
+      costMultiplier: drawMultiplier
     });
 
     return { env, cellCount, error: null as string | null };
@@ -184,7 +184,6 @@ export default function App() {
         id: zoneId,
         name: `Cost zone ${prev.filter((p) => p.type === 'COST').length + 1}`,
         type: 'COST',
-        multiplier: clamp(drawMultiplier, 0.1, 50),
         shape
       };
       return [...prev, z];
@@ -302,7 +301,6 @@ export default function App() {
         id: zone.id,
         name: zone.name,
         type: 'COST',
-        multiplier: zone.multiplier,
         shape: zone.shape
       };
     });
@@ -394,7 +392,7 @@ export default function App() {
                       const buffered = turf.buffer(zone.shape as any, next.noFlyBufferM, { units: 'meters' }) as any;
                       return { ...zone, buffered } as Zone;
                     }
-                    return { ...zone, multiplier: clamp(zone.multiplier, 0.1, 50) } as Zone;
+                    return { ...zone } as Zone;
                   })
                 );
                 setStart(next.start);
@@ -448,12 +446,12 @@ export default function App() {
           <label>Drawing mode</label>
           <select value={drawZoneType} onChange={(e) => setDrawZoneType(e.target.value as ZoneType)}>
             <option value="NO_FLY">No-fly zone (10m buffer)</option>
-            <option value="COST">Cost zone (multiplier)</option>
+            <option value="COST">Cost zone (global multiplier)</option>
           </select>
 
           {drawZoneType === 'COST' ? (
             <>
-              <label>Cost multiplier (discouraged &gt; 1, encouraged &lt; 1)</label>
+              <label>Global cost multiplier (discouraged &gt; 1, encouraged &lt; 1)</label>
               <input
                 type="number"
                 min={0.1}
@@ -463,9 +461,6 @@ export default function App() {
                 onChange={(e) => {
                   const value = clamp(parseFloat(e.target.value), 0.1, 50);
                   setDrawMultiplier(value);
-                  setZones((prev) =>
-                    prev.map((zone) => (zone.type === 'COST' ? { ...zone, multiplier: value } : zone))
-                  );
                 }}
               />
             </>
@@ -478,6 +473,8 @@ export default function App() {
           <hr />
           <div className="small">
             Zones: <b>{noFlyCount}</b> no-fly, <b>{costZones.length}</b> cost.
+            <br />
+            Cost zones share the same global multiplier setting.
             <br />
             Use the polygon/rectangle tools on the map (top-left) to draw.
             <br />
@@ -673,12 +670,10 @@ function parseMapState(raw: any): MapState | null {
     }
     if (zone.type === 'COST') {
       if (!isPolygonFeature(zone.shape)) return null;
-      if (!Number.isFinite(zone.multiplier)) return null;
       zones.push({
         id: zone.id,
         name: zone.name,
         type: 'COST',
-        multiplier: zone.multiplier,
         shape: zone.shape
       });
       continue;
