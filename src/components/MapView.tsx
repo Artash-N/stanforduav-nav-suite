@@ -65,6 +65,30 @@ export function MapView(props: {
     });
   }, [featureGroup, props.zones]);
 
+  useEffect(() => {
+    if (!featureGroup) return;
+
+    featureGroup.clearLayers();
+
+    props.zones.forEach((zone) => {
+      const geoJsonLayer = L.geoJSON(zone.shape);
+      geoJsonLayer.eachLayer((layer: any) => {
+        layer.__zoneId = zone.id;
+        const path = layer as unknown as L.Path;
+        if ('setStyle' in path) {
+          if (zone.type === 'NO_FLY') {
+            path.setStyle({ color: '#cc0000', fillColor: '#cc0000', fillOpacity: 0.25 });
+          } else if (zone.multiplier >= 1) {
+            path.setStyle({ color: '#cc7a00', fillColor: '#cc7a00', fillOpacity: 0.20 });
+          } else {
+            path.setStyle({ color: '#2b8a3e', fillColor: '#2b8a3e', fillOpacity: 0.20 });
+          }
+        }
+        featureGroup.addLayer(layer);
+      });
+    });
+  }, [featureGroup, props.zones]);
+
   const planningRectBounds = useMemo(() => {
     if (!props.planningBounds) return null;
     return [
