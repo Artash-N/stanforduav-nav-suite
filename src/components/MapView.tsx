@@ -6,7 +6,7 @@ import type { Feature, Polygon, MultiPolygon } from 'geojson';
 
 import type { CostZoneType, LatLng, LatLngBounds, Zone } from '../types';
 import { DrawControls, MapClickHandler, type DrawControlsMode } from './DrawControls';
-import { CanvasCellsLayer } from './visitedLayer';
+import { CanvasCellsLayer, CanvasCostHeatmapLayer } from './visitedLayer';
 import type { GridEnvironment } from '../env/GridEnvironment';
 
 export function MapView(props: {
@@ -34,6 +34,7 @@ export function MapView(props: {
   pathCells: number[];
   pathLatLngs: LatLng[];
   showVisited: boolean;
+  showCostHeatmap: boolean;
 }) {
   const [featureGroup, setFeatureGroup] = useState<L.FeatureGroup | null>(null);
   const costTypeById = useMemo(() => {
@@ -215,6 +216,7 @@ export function MapView(props: {
       ) : null}
 
       {/* Canvas overlay for visited + path cells (fast-ish, sampled) */}
+      <CanvasCostHeatmapLayer env={props.env} show={props.showCostHeatmap} />
       <CanvasCellsLayer
         env={props.env}
         visited={props.visited}
