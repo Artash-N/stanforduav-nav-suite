@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FeatureGroup, MapContainer, Marker, Polyline, Rectangle, TileLayer } from 'react-leaflet';
+import { FeatureGroup, MapContainer, Marker, Polyline, Popup, Rectangle, TileLayer } from 'react-leaflet';
 import type { LatLngExpression } from 'leaflet';
 import L from 'leaflet';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
@@ -34,9 +34,12 @@ export function MapView(props: {
   pathCells: number[];
   pathLatLngs: LatLng[];
   waypointLatLngs: LatLng[];
+  waypointColors: string[];
+  waypointColorOptions: { name: string; color: string }[];
   showVisited: boolean;
   showCostHeatmap: boolean;
   showWaypoints: boolean;
+  onWaypointColorChange: (index: number, color: string) => void;
 }) {
   const [featureGroup, setFeatureGroup] = useState<L.FeatureGroup | null>(null);
   const costTypeById = useMemo(() => {
@@ -124,10 +127,10 @@ export function MapView(props: {
   }, []);
 
   const waypointIcon = useMemo(() => {
-    return (label: string) =>
+    return (label: string, color: string) =>
       L.divIcon({
         className: 'marker marker-waypoint',
-        html: `<div class="marker-inner">${label}</div>`,
+        html: `<div class="marker-inner" style="background: ${color};">${label}</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14]
       });
@@ -228,13 +231,40 @@ export function MapView(props: {
       ) : null}
 
       {props.showWaypoints
-        ? props.waypointLatLngs.map((point, index) => (
-            <Marker
-              key={`wp-${index}-${point.lat.toFixed(5)}-${point.lng.toFixed(5)}`}
-              position={[point.lat, point.lng]}
-              icon={waypointIcon(`WP${index + 1}`)}
-            />
-          ))
+        ? props.waypointLatLngs.map((point, index) => {
+            const waypointColor = props.waypointColors[index] ?? props.waypointColorOptions[0]?.color ?? '#f08c00';
+            return (
+              <Marker
+                key={`wp-${index}-${point.lat.toFixed(5)}-${point.lng.toFixed(5)}`}
+                position={[point.lat, point.lng]}
+                icon={waypointIcon(`WP${index + 1}`, waypointColor)}
+              >
+                <Popup>
+                  <div className="waypoint-color-picker">
+                    <div className="waypoint-color-title">Waypoint color</div>
+                    <div className="waypoint-color-options">
+                      {props.waypointColorOptions.map((option) => (
+                        <button
+                          key={`${index}-${option.color}`}
+                          type="button"
+                          className={`waypoint-color-option${
+                            waypointColor === option.color ? ' is-active' : ''
+                          }`}
+                          style={{ background: option.color }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            props.onWaypointColorChange(index, option.color);
+                          }}
+                        >
+                          {option.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })
         : null}
 
       {/* Canvas overlay for visited + path cells (fast-ish, sampled) */}
