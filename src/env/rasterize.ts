@@ -93,6 +93,9 @@ export function rasterizeZonesToGrid(params: {
       })
       .filter((entry) => entry.multiplier > 1);
 
+    const rolloffSum = new Float32Array(cellCount);
+    const rolloffCount = new Uint16Array(cellCount);
+
     for (const entry of highCostZones) {
       const { bbox, polys, multiplier } = entry;
       const minCol = clampInt(
@@ -130,9 +133,19 @@ export function rasterizeZonesToGrid(params: {
           const falloff = 1 - normalized;
           const factor = 1 + (multiplier - 1) * falloff;
           if (factor > 1) {
-            costMultiplier[id] *= factor;
+            rolloffSum[id] += factor;
+            rolloffCount[id] += 1;
           }
         }
+      }
+    }
+
+    for (let id = 0; id < cellCount; id += 1) {
+      const count = rolloffCount[id];
+      if (count === 0 || blocked[id] === 1) continue;
+      const avgFactor = rolloffSum[id] / count;
+      if (avgFactor > 1) {
+        costMultiplier[id] *= avgFactor;
       }
     }
   }
