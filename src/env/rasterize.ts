@@ -30,8 +30,9 @@ export function rasterizeZonesToGrid(params: {
   cellSizeM: number;
   bounds: GridBoundsMeters;
   zones: Zone[];
+  costMultiplier: number;
 }): RasterizeResult {
-  const { cellSizeM, bounds, zones } = params;
+  const { cellSizeM, bounds, zones, costMultiplier: globalCostMultiplier } = params;
 
   const width = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / cellSizeM));
   const height = Math.max(1, Math.ceil((bounds.maxY - bounds.minY) / cellSizeM));
@@ -70,7 +71,7 @@ export function rasterizeZonesToGrid(params: {
         if (z.type === 'NO_FLY') {
           blocked[id] = 1;
         } else {
-          costMultiplier[id] *= z.multiplier;
+          costMultiplier[id] *= globalCostMultiplier;
         }
       }
     }
