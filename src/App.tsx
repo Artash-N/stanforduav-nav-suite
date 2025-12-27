@@ -104,6 +104,7 @@ export default function App() {
 
   const [showVisited, setShowVisited] = useState<boolean>(false);
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
+  const [showWaypoints, setShowWaypoints] = useState<boolean>(false);
   const [useShortcutting, setUseShortcutting] = useState<boolean>(false);
   const [shortcuttingMultiplierTolerance, setShortcuttingMultiplierTolerance] = useState<number>(0);
   const [usePathAveraging, setUsePathAveraging] = useState<boolean>(false);
@@ -256,6 +257,35 @@ export default function App() {
   const pathLatLngs = useMemo<LatLng[]>(() => {
     if (averagedPathPointsM.length === 0) return [];
     return averagedPathPointsM.map(({ xM, yM }) => {
+      const { lat, lng } = mercatorToLonLat(xM, yM);
+      return { lat, lng };
+    });
+  }, [averagedPathPointsM]);
+
+  const waypointLatLngs = useMemo<LatLng[]>(() => {
+    if (averagedPathPointsM.length < 3) return [];
+    const turnIndices: number[] = [];
+    const minAngleRad = (15 * Math.PI) / 180;
+    for (let i = 1; i < averagedPathPointsM.length - 1; i += 1) {
+      const prev = averagedPathPointsM[i - 1];
+      const curr = averagedPathPointsM[i];
+      const next = averagedPathPointsM[i + 1];
+      const v1x = curr.xM - prev.xM;
+      const v1y = curr.yM - prev.yM;
+      const v2x = next.xM - curr.xM;
+      const v2y = next.yM - curr.yM;
+      const v1Len = Math.hypot(v1x, v1y);
+      const v2Len = Math.hypot(v2x, v2y);
+      if (v1Len === 0 || v2Len === 0) continue;
+      const dot = v1x * v2x + v1y * v2y;
+      const cosTheta = clamp(dot / (v1Len * v2Len), -1, 1);
+      const angle = Math.acos(cosTheta);
+      if (angle >= minAngleRad) {
+        turnIndices.push(i);
+      }
+    }
+    return turnIndices.map((index) => {
+      const { xM, yM } = averagedPathPointsM[index];
       const { lat, lng } = mercatorToLonLat(xM, yM);
       return { lat, lng };
     });
@@ -899,6 +929,17 @@ export default function App() {
             />
             Show cost heatmap
           </label>
+          <div className="toggle-row">
+            <span>Show waypoints</span>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={showWaypoints}
+                onChange={(e) => setShowWaypoints(e.target.checked)}
+              />
+              <span className="slider" />
+            </label>
+          </div>
 
           {metrics ? (
             <div className="section">
@@ -950,8 +991,10 @@ export default function App() {
         visited={runResult?.res.visited ?? []}
         pathCells={pathCells}
         pathLatLngs={pathLatLngs}
+        waypointLatLngs={waypointLatLngs}
         showVisited={showVisited}
         showCostHeatmap={showCostHeatmap}
+        showWaypoints={showWaypoints}
       />
     </div>
   );

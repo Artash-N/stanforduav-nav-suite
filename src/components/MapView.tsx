@@ -33,8 +33,10 @@ export function MapView(props: {
   visited: number[];
   pathCells: number[];
   pathLatLngs: LatLng[];
+  waypointLatLngs: LatLng[];
   showVisited: boolean;
   showCostHeatmap: boolean;
+  showWaypoints: boolean;
 }) {
   const [featureGroup, setFeatureGroup] = useState<L.FeatureGroup | null>(null);
   const costTypeById = useMemo(() => {
@@ -119,6 +121,16 @@ export function MapView(props: {
       iconSize: [28, 28],
       iconAnchor: [14, 14]
     });
+  }, []);
+
+  const waypointIcon = useMemo(() => {
+    return (label: string) =>
+      L.divIcon({
+        className: 'marker marker-waypoint',
+        html: `<div class="marker-inner">${label}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
   }, []);
 
   const tile = useMemo(() => {
@@ -214,6 +226,16 @@ export function MapView(props: {
       {props.pathLatLngs.length > 0 ? (
         <Polyline positions={props.pathLatLngs.map((p) => [p.lat, p.lng]) as any} />
       ) : null}
+
+      {props.showWaypoints
+        ? props.waypointLatLngs.map((point, index) => (
+            <Marker
+              key={`wp-${index}-${point.lat.toFixed(5)}-${point.lng.toFixed(5)}`}
+              position={[point.lat, point.lng]}
+              icon={waypointIcon(`WP${index + 1}`)}
+            />
+          ))
+        : null}
 
       {/* Canvas overlay for visited + path cells (fast-ish, sampled) */}
       <CanvasCostHeatmapLayer env={props.env} show={props.showCostHeatmap} />
