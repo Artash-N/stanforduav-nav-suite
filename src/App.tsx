@@ -83,6 +83,7 @@ const WAYPOINT_COLOR_OPTIONS = [
   { name: 'Teal', color: '#12b886' },
   { name: 'Orange', color: '#f08c00' },
   { name: 'Pink', color: '#e64980' },
+  { name: 'Magenta', color: '#d6336c' },
   { name: 'Green', color: '#2f9e44' }
 ];
 const DEFAULT_WAYPOINT_COLOR = '#f08c00';
@@ -114,6 +115,7 @@ export default function App() {
   const [showVisited, setShowVisited] = useState<boolean>(false);
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
   const [showWaypoints, setShowWaypoints] = useState<boolean>(false);
+  const [selectedWaypointColor, setSelectedWaypointColor] = useState<string>(DEFAULT_WAYPOINT_COLOR);
   const [useShortcutting, setUseShortcutting] = useState<boolean>(false);
   const [shortcuttingMultiplierTolerance, setShortcuttingMultiplierTolerance] = useState<number>(0);
   const [usePathAveraging, setUsePathAveraging] = useState<boolean>(false);
@@ -309,10 +311,10 @@ export default function App() {
       }
       return [
         ...prev,
-        ...Array.from({ length: waypointLatLngs.length - prev.length }, () => DEFAULT_WAYPOINT_COLOR)
+        ...Array.from({ length: waypointLatLngs.length - prev.length }, () => selectedWaypointColor)
       ];
     });
-  }, [waypointLatLngs.length]);
+  }, [selectedWaypointColor, waypointLatLngs.length]);
 
   const metrics = useMemo<PathRunMetrics | null>(() => {
     if (!runResult || !raster.env) return null;
@@ -375,12 +377,9 @@ export default function App() {
     setZones((prev) => prev.filter((z) => z.id !== zoneId));
   }
 
-  function onWaypointColorChange(index: number, color: string) {
-    setWaypointColors((prev) => {
-      const next = [...prev];
-      next[index] = color;
-      return next;
-    });
+  function onWaypointColorSelect(color: string) {
+    setSelectedWaypointColor(color);
+    setWaypointColors((prev) => prev.map(() => color));
   }
 
   async function runAlgorithm() {
@@ -962,14 +961,30 @@ export default function App() {
           </label>
           <div className="toggle-row">
             <span>Show waypoints</span>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={showWaypoints}
-                onChange={(e) => setShowWaypoints(e.target.checked)}
-              />
-              <span className="slider" />
-            </label>
+            <div className="toggle-row-actions">
+              <div className="waypoint-color-bar" role="listbox" aria-label="Waypoint colors">
+                {WAYPOINT_COLOR_OPTIONS.map((option) => (
+                  <button
+                    key={option.color}
+                    type="button"
+                    className={`waypoint-color-swatch${
+                      selectedWaypointColor === option.color ? ' is-active' : ''
+                    }`}
+                    style={{ background: option.color }}
+                    aria-label={`Waypoint color ${option.name}`}
+                    onClick={() => onWaypointColorSelect(option.color)}
+                  />
+                ))}
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={showWaypoints}
+                  onChange={(e) => setShowWaypoints(e.target.checked)}
+                />
+                <span className="slider" />
+              </label>
+            </div>
           </div>
 
           {metrics ? (
@@ -1024,11 +1039,9 @@ export default function App() {
         pathLatLngs={pathLatLngs}
         waypointLatLngs={waypointLatLngs}
         waypointColors={waypointColors}
-        waypointColorOptions={WAYPOINT_COLOR_OPTIONS}
         showVisited={showVisited}
         showCostHeatmap={showCostHeatmap}
         showWaypoints={showWaypoints}
-        onWaypointColorChange={onWaypointColorChange}
       />
     </div>
   );
