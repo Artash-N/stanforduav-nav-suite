@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import * as turf from '@turf/turf';
 
@@ -10,16 +10,46 @@ import { lonLatToMercator, mercatorToLonLat } from './geo/mercator';
 import { latLngBoundsToMercatorBounds, rasterizeZonesToGrid } from './env/rasterize';
 
 const MAX_CELLS = 250000; // performance guardrail
-const NO_FLY_BUFFER_M = 10;
+const DEFAULT_NO_FLY_BUFFER_M = 10;
+
+type BasemapId = 'osm' | 'topo' | 'satellite' | 'humanitarian';
+
+type SerializedZone =
+  | {
+      id: string;
+      name: string;
+      type: 'NO_FLY';
+      shape: Feature<Polygon | MultiPolygon>;
+    }
+  | {
+      id: string;
+      name: string;
+      type: 'COST';
+      multiplier: number;
+      shape: Feature<Polygon | MultiPolygon>;
+    };
+
+interface MapState {
+  version: 1;
+  zones: SerializedZone[];
+  start: LatLng | null;
+  goal: LatLng | null;
+  planningBounds: LatLngBounds | null;
+  resolutionM: number;
+  basemap: BasemapId;
+  noFlyBufferM: number;
+  drawMultiplier: number;
+}
 
 export default function App() {
   const [resolutionM, setResolutionM] = useState<number>(10);
   const [zones, setZones] = useState<Zone[]>([]);
 
-  const [basemap, setBasemap] = useState<'osm' | 'topo' | 'satellite' | 'humanitarian'>('osm');
+  const [basemap, setBasemap] = useState<BasemapId>('osm');
 
   const [drawZoneType, setDrawZoneType] = useState<ZoneType>('NO_FLY');
   const [drawMultiplier, setDrawMultiplier] = useState<number>(3);
+  const [noFlyBufferM, setNoFlyBufferM] = useState<number>(DEFAULT_NO_FLY_BUFFER_M);
 
   const [start, setStart] = useState<LatLng | null>(null);
   const [goal, setGoal] = useState<LatLng | null>(null);
@@ -45,7 +75,9 @@ export default function App() {
     };
     runtimeMs: number;
   } | null>(null);
- // Keep planning bounds initialized to first available view bounds so the user can immediately run.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Keep planning bounds initialized to first available view bounds so the user can immediately run.
   useEffect(() => {
     if (!planningBounds && currentViewBounds) {
       setPlanningBounds(currentViewBounds);
@@ -137,7 +169,7 @@ export default function App() {
   function onZoneCreated(zoneId: string, shape: Feature<Polygon | MultiPolygon>) {
     setZones((prev) => {
       if (drawZoneType === 'NO_FLY') {
-        const buffered = turf.buffer(shape as any, NO_FLY_BUFFER_M, { units: 'meters' }) as any;
+        const buffered = turf.buffer(shape as any, noFlyBufferM, { units: 'meters' }) as any;
         const z: Zone = {
           id: zoneId,
           name: `No-fly ${prev.filter((p) => p.type === 'NO_FLY').length + 1}`,
@@ -164,7 +196,7 @@ export default function App() {
       prev.map((z) => {
         if (z.id !== zoneId) return z;
         if (z.type === 'NO_FLY') {
-          const buffered = turf.buffer(shape as any, NO_FLY_BUFFER_M, { units: 'meters' }) as any;
+          const buffered = turf.buffer(shape as any, noFlyBufferM, { units: 'meters' }) as any;
           return { ...z, shape, buffered };
         }
         return { ...z, shape };
@@ -256,6 +288,37 @@ export default function App() {
 
   const costZones = zones.filter((z) => z.type === 'COST') as Array<Extract<Zone, { type: 'COST' }>>;
   const noFlyCount = zones.filter((z) => z.type === 'NO_FLY').length;
+  const currentMapState = useMemo<MapState>(() => {
+    const serializedZones: SerializedZone[] = zones.map((zone) => {
+      if (zone.type === 'NO_FLY') {
+        return {
+          id: zone.id,
+          name: zone.name,
+          type: 'NO_FLY',
+          shape: zone.shape
+        };
+      }
+      return {
+        id: zone.id,
+        name: zone.name,
+        type: 'COST',
+        multiplier: zone.multiplier,
+        shape: zone.shape
+      };
+    });
+
+    return {
+      version: 1,
+      zones: serializedZones,
+      start,
+      goal,
+      planningBounds,
+      resolutionM,
+      basemap,
+      noFlyBufferM,
+      drawMultiplier
+    };
+  }, [basemap, drawMultiplier, goal, noFlyBufferM, planningBounds, resolutionM, start, zones]);
 
   return (
     <div className="app">
@@ -285,6 +348,70 @@ export default function App() {
             <option value="humanitarian">OSM HOT (Humanitarian)</option>
           </select>
           <div className="small">Switching basemaps does not affect planning; it's just visualization.</div>
+        </div>
+
+        <div className="section">
+          <label>Map state</label>
+          <div className="row">
+            <button
+              onClick={() => {
+                const data = JSON.stringify(currentMapState, null, 2);
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'map-state.json';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Save
+            </button>
+            <button onClick={() => fileInputRef.current?.click()}>Load</button>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              event.target.value = '';
+              try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                const next = parseMapState(parsed);
+                if (!next) {
+                  alert('Invalid map state file.');
+                  return;
+                }
+                setZones(
+                  next.zones.map((zone) => {
+                    if (zone.type === 'NO_FLY') {
+                      const buffered = turf.buffer(zone.shape as any, next.noFlyBufferM, { units: 'meters' }) as any;
+                      return { ...zone, buffered } as Zone;
+                    }
+                    return { ...zone, multiplier: clamp(zone.multiplier, 0.1, 50) } as Zone;
+                  })
+                );
+                setStart(next.start);
+                setGoal(next.goal);
+                setPlanningBounds(next.planningBounds);
+                setResolutionM(next.resolutionM);
+                setBasemap(next.basemap);
+                setNoFlyBufferM(next.noFlyBufferM);
+                setDrawMultiplier(clamp(next.drawMultiplier, 0.1, 50));
+                setPlacementMode(null);
+                setRunResult(null);
+              } catch (e: any) {
+                alert(`Failed to load map state.\n\n${e?.message ?? e}`);
+              }
+            }}
+          />
+          <div className="small">Save or load zones, bounds, and settings as JSON.</div>
         </div>
 
         <div className="section">
@@ -338,7 +465,7 @@ export default function App() {
             </>
           ) : (
             <div className="small">
-              No-fly zones are blocked for planning, with an automatic <b>{NO_FLY_BUFFER_M}m</b> buffer.
+              No-fly zones are blocked for planning, with an automatic <b>{noFlyBufferM}m</b> buffer.
             </div>
           )}
 
@@ -496,6 +623,97 @@ function clamp(v: number, min: number, max: number): number {
   if (v < min) return min;
   if (v > max) return max;
   return v;
+}
+
+const basemapOptions = new Set<BasemapId>(['osm', 'topo', 'satellite', 'humanitarian']);
+
+function isLatLng(value: any): value is LatLng {
+  return (
+    value &&
+    typeof value === 'object' &&
+    typeof value.lat === 'number' &&
+    Number.isFinite(value.lat) &&
+    typeof value.lng === 'number' &&
+    Number.isFinite(value.lng)
+  );
+}
+
+function isLatLngBounds(value: any): value is LatLngBounds {
+  return (
+    value &&
+    typeof value === 'object' &&
+    typeof value.south === 'number' &&
+    Number.isFinite(value.south) &&
+    typeof value.west === 'number' &&
+    Number.isFinite(value.west) &&
+    typeof value.north === 'number' &&
+    Number.isFinite(value.north) &&
+    typeof value.east === 'number' &&
+    Number.isFinite(value.east)
+  );
+}
+
+function isPolygonFeature(value: any): value is Feature<Polygon | MultiPolygon> {
+  const geometryType = value?.geometry?.type;
+  return value?.type === 'Feature' && (geometryType === 'Polygon' || geometryType === 'MultiPolygon');
+}
+
+function parseMapState(raw: any): MapState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.version !== 1) return null;
+  if (!basemapOptions.has(raw.basemap)) return null;
+  if (!Number.isFinite(raw.resolutionM)) return null;
+  if (!Number.isFinite(raw.noFlyBufferM)) return null;
+  if (!Number.isFinite(raw.drawMultiplier)) return null;
+
+  const start = raw.start;
+  if (start !== null && !isLatLng(start)) return null;
+  const goal = raw.goal;
+  if (goal !== null && !isLatLng(goal)) return null;
+  const planningBounds = raw.planningBounds;
+  if (planningBounds !== null && !isLatLngBounds(planningBounds)) return null;
+
+  if (!Array.isArray(raw.zones)) return null;
+  const zones: SerializedZone[] = [];
+  for (const zone of raw.zones) {
+    if (!zone || typeof zone !== 'object') return null;
+    if (typeof zone.id !== 'string' || typeof zone.name !== 'string') return null;
+    if (zone.type === 'NO_FLY') {
+      if (!isPolygonFeature(zone.shape)) return null;
+      zones.push({
+        id: zone.id,
+        name: zone.name,
+        type: 'NO_FLY',
+        shape: zone.shape
+      });
+      continue;
+    }
+    if (zone.type === 'COST') {
+      if (!isPolygonFeature(zone.shape)) return null;
+      if (!Number.isFinite(zone.multiplier)) return null;
+      zones.push({
+        id: zone.id,
+        name: zone.name,
+        type: 'COST',
+        multiplier: zone.multiplier,
+        shape: zone.shape
+      });
+      continue;
+    }
+    return null;
+  }
+
+  return {
+    version: 1,
+    zones,
+    start: start ?? null,
+    goal: goal ?? null,
+    planningBounds: planningBounds ?? null,
+    resolutionM: raw.resolutionM,
+    basemap: raw.basemap,
+    noFlyBufferM: raw.noFlyBufferM,
+    drawMultiplier: raw.drawMultiplier
+  };
 }
 
 function computePathLengthM(env: any, path: number[]): number {
