@@ -115,7 +115,7 @@ export default function App() {
       let changed = false;
       const next = prev.map((z) => {
         if (z.type !== 'NO_FLY') return z;
-        const buffered = turf.buffer(z.shape as any, noFlyBufferM, { units: 'meters' }) as any;
+        const buffered = bufferNoFlyShape(z.shape, noFlyBufferM);
         changed = true;
         return { ...z, buffered };
       });
@@ -150,7 +150,7 @@ export default function App() {
   function onZoneCreated(zoneId: string, shape: Feature<Polygon | MultiPolygon>) {
     setZones((prev) => {
       if (drawZoneType === 'NO_FLY') {
-        const buffered = turf.buffer(shape as any, noFlyBufferM, { units: 'meters' }) as any;
+        const buffered = bufferNoFlyShape(shape, noFlyBufferM);
         const z: Zone = {
           id: zoneId,
           name: `No-fly ${prev.filter((p) => p.type === 'NO_FLY').length + 1}`,
@@ -177,7 +177,7 @@ export default function App() {
       prev.map((z) => {
         if (z.id !== zoneId) return z;
         if (z.type === 'NO_FLY') {
-          const buffered = turf.buffer(shape as any, noFlyBufferM, { units: 'meters' }) as any;
+          const buffered = bufferNoFlyShape(shape, noFlyBufferM);
           return { ...z, shape, buffered };
         }
         return { ...z, shape };
@@ -534,4 +534,8 @@ function computePathLengthM(env: any, path: number[]): number {
     total += Math.hypot(a.xM - b.xM, a.yM - b.yM);
   }
   return total;
+}
+
+function bufferNoFlyShape(shape: Feature<Polygon | MultiPolygon>, bufferM: number) {
+  return turf.buffer(shape as any, bufferM, { units: 'meters' }) as any;
 }
