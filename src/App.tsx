@@ -41,7 +41,6 @@ interface MapState {
   basemap: BasemapId;
   noFlyBufferM: number;
   avoidHighMultiplier: boolean;
-  rolloffStrength: number;
   rolloffDistanceM: number;
   costZoneTypes: CostZoneType[];
   drawMode: DrawMode;
@@ -56,7 +55,6 @@ interface ParsedMapState {
   basemap: BasemapId;
   noFlyBufferM: number;
   avoidHighMultiplier: boolean;
-  rolloffStrength: number;
   rolloffDistanceM: number;
   costZoneTypes: CostZoneType[];
   drawMode: DrawMode;
@@ -77,7 +75,6 @@ const DEFAULT_COST_ZONE_TYPES: CostZoneType[] = [
   { id: 'open-space', name: 'Open space', multiplier: 0.7, color: '#2f9e44' }
 ];
 const DEFAULT_AVOID_HIGH_MULTIPLIER = false;
-const DEFAULT_ROLLOFF_STRENGTH = 1;
 const DEFAULT_ROLLOFF_DISTANCE_M = 50;
 
 export default function App() {
@@ -91,7 +88,6 @@ export default function App() {
   const [drawMode, setDrawMode] = useState<DrawMode>({ kind: 'NO_FLY' });
   const [noFlyBufferM, setNoFlyBufferM] = useState<number>(DEFAULT_NO_FLY_BUFFER_M);
   const [avoidHighMultiplier, setAvoidHighMultiplier] = useState<boolean>(DEFAULT_AVOID_HIGH_MULTIPLIER);
-  const [rolloffStrength, setRolloffStrength] = useState<number>(DEFAULT_ROLLOFF_STRENGTH);
   const [rolloffDistanceM, setRolloffDistanceM] = useState<number>(DEFAULT_ROLLOFF_DISTANCE_M);
 
   const [start, setStart] = useState<LatLng | null>(null);
@@ -208,7 +204,6 @@ export default function App() {
       zones,
       costZoneTypes,
       avoidHighMultiplier,
-      rolloffStrength,
       rolloffDistanceM
     });
 
@@ -219,7 +214,6 @@ export default function App() {
     planningBounds,
     resolutionM,
     rolloffDistanceM,
-    rolloffStrength,
     zones
   ]);
 
@@ -416,7 +410,6 @@ export default function App() {
       basemap,
       noFlyBufferM,
       avoidHighMultiplier,
-      rolloffStrength,
       rolloffDistanceM,
       costZoneTypes,
       drawMode
@@ -431,7 +424,6 @@ export default function App() {
     planningBounds,
     resolutionM,
     rolloffDistanceM,
-    rolloffStrength,
     start,
     zones
   ]);
@@ -520,7 +512,6 @@ export default function App() {
                 setBasemap(next.basemap);
                 setNoFlyBufferM(next.noFlyBufferM);
                 setAvoidHighMultiplier(next.avoidHighMultiplier);
-                setRolloffStrength(next.rolloffStrength);
                 setRolloffDistanceM(next.rolloffDistanceM);
                 setCostZoneTypes(next.costZoneTypes);
                 setDrawMode(next.drawMode);
@@ -735,17 +726,6 @@ export default function App() {
             />
             Avoid high-cost zones with a soft gradient
           </label>
-          <label>Rolloff strength</label>
-          <input
-            type="range"
-            min={0}
-            max={2}
-            step={0.05}
-            value={rolloffStrength}
-            onChange={(e) => setRolloffStrength(parseFloat(e.target.value))}
-            disabled={!avoidHighMultiplier}
-          />
-          <div className="small">{rolloffStrength.toFixed(2)} strength</div>
           <label>Rolloff distance (meters)</label>
           <input
             type="range"
@@ -1059,9 +1039,6 @@ function parseMapState(raw: any): ParsedMapState | null {
       noFlyBufferM: raw.noFlyBufferM,
       avoidHighMultiplier:
         typeof raw.avoidHighMultiplier === 'boolean' ? raw.avoidHighMultiplier : DEFAULT_AVOID_HIGH_MULTIPLIER,
-      rolloffStrength: Number.isFinite(raw.rolloffStrength)
-        ? clamp(raw.rolloffStrength, 0, 2)
-        : DEFAULT_ROLLOFF_STRENGTH,
       rolloffDistanceM: Number.isFinite(raw.rolloffDistanceM)
         ? clamp(raw.rolloffDistanceM, 0, 1000)
         : DEFAULT_ROLLOFF_DISTANCE_M,
@@ -1133,7 +1110,6 @@ function parseMapState(raw: any): ParsedMapState | null {
       basemap: raw.basemap,
       noFlyBufferM: raw.noFlyBufferM,
       avoidHighMultiplier: DEFAULT_AVOID_HIGH_MULTIPLIER,
-      rolloffStrength: DEFAULT_ROLLOFF_STRENGTH,
       rolloffDistanceM: DEFAULT_ROLLOFF_DISTANCE_M,
       costZoneTypes: normalizedTypes,
       drawMode: { kind: 'NO_FLY' }
