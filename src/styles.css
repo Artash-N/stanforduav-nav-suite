@@ -196,39 +196,6 @@ hr {
   letter-spacing: 0.2px;
 }
 
-.waypoint-color-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.waypoint-color-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #222;
-}
-
-.waypoint-color-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.waypoint-color-option {
-  border: none;
-  border-radius: 8px;
-  padding: 6px 8px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
-}
-
-.waypoint-color-option.is-active {
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.9);
-}
-
 .toggle-row {
   display: flex;
   align-items: center;
@@ -237,6 +204,32 @@ hr {
   font-size: 12px;
   color: #444;
   margin: 6px 0;
+}
+
+.toggle-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.waypoint-color-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.waypoint-color-swatch {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.waypoint-color-swatch.is-active {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
 .switch {
