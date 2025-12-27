@@ -112,6 +112,100 @@ class CanvasCellsLeafletLayer extends L.Layer {
   };
 }
 
+class CanvasCostHeatmapLeafletLayer extends L.Layer {
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  private map: L.Map | null = null;
+
+  private env: GridEnvironment | null = null;
+  private show = false;
+
+  constructor() {
+    super();
+    this.canvas = L.DomUtil.create('canvas', 'leaflet-canvas-heatmap') as HTMLCanvasElement;
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get canvas context');
+    this.ctx = ctx;
+
+    this.canvas.style.position = 'absolute';
+    this.canvas.style.top = '0';
+    this.canvas.style.left = '0';
+    this.canvas.style.pointerEvents = 'none';
+  }
+
+  onAdd(map: L.Map) {
+    this.map = map;
+    map.getPanes().overlayPane.appendChild(this.canvas);
+    map.on('moveend zoomend resize', this.redraw, this);
+    this.redraw();
+  }
+
+  onRemove(map: L.Map) {
+    map.off('moveend zoomend resize', this.redraw, this);
+    if (this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
+    this.map = null;
+  }
+
+  setData(params: { env: GridEnvironment | null; show: boolean }) {
+    this.env = params.env;
+    this.show = params.show;
+    this.redraw();
+  }
+
+  redraw = () => {
+    if (!this.map) return;
+
+    const size = this.map.getSize();
+    const ratio = window.devicePixelRatio || 1;
+    const topLeft = this.map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(this.canvas, topLeft);
+    this.canvas.width = Math.round(size.x * ratio);
+    this.canvas.height = Math.round(size.y * ratio);
+    this.canvas.style.width = `${size.x}px`;
+    this.canvas.style.height = `${size.y}px`;
+
+    this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    this.ctx.clearRect(0, 0, size.x, size.y);
+
+    if (!this.env || !this.show) return;
+
+    const totalCells = this.env.size();
+    if (totalCells === 0) return;
+
+    const maxSample = 50000;
+    const percentile = 0.95;
+    const sampleStride = Math.max(1, Math.ceil(totalCells / maxSample));
+    const samples: number[] = [];
+    for (let id = 0; id < totalCells; id += sampleStride) {
+      if (this.env.isBlocked(id)) continue;
+      const value = this.env.costMultiplier[id] ?? 1;
+      if (value > 1) samples.push(value);
+    }
+    if (samples.length === 0) return;
+    samples.sort((a, b) => a - b);
+    const idx = Math.min(samples.length - 1, Math.floor(samples.length * percentile));
+    const maxMultiplier = Math.max(1.1, samples[idx]);
+
+    const maxDrawCells = 60000;
+    const drawStride = Math.max(1, Math.ceil(totalCells / maxDrawCells));
+
+    for (let id = 0; id < totalCells; id += drawStride) {
+      if (this.env.isBlocked(id)) continue;
+      const value = this.env.costMultiplier[id] ?? 1;
+      if (value <= 1) continue;
+      const normalized = clamp01((value - 1) / (maxMultiplier - 1));
+      if (normalized <= 0) continue;
+      const { xM, yM } = this.env.cellCenter(id);
+      const { lat, lng } = mercatorToLonLat(xM, yM);
+      const pt = this.map.latLngToLayerPoint([lat, lng]).subtract(topLeft);
+
+      const color = heatmapColor(normalized);
+      this.ctx.fillStyle = color;
+      this.ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+    }
+  };
+}
+
 export function CanvasCellsLayer(props: {
   env: GridEnvironment | null;
   visited: number[];
@@ -145,4 +239,47 @@ export function CanvasCellsLayer(props: {
   }, [map, props.env, props.visited, props.pathCells, props.showVisited]);
 
   return null;
+}
+
+export function CanvasCostHeatmapLayer(props: { env: GridEnvironment | null; show: boolean }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const layer = new CanvasCostHeatmapLeafletLayer();
+    layer.addTo(map);
+
+    return () => {
+      layer.remove();
+    };
+  }, [map]);
+
+  useEffect(() => {
+    let found: CanvasCostHeatmapLeafletLayer | null = null;
+    map.eachLayer((l: any) => {
+      if (l instanceof CanvasCostHeatmapLeafletLayer) found = l;
+    });
+    if (!found) return;
+    found.setData({
+      env: props.env,
+      show: props.show
+    });
+  }, [map, props.env, props.show]);
+
+  return null;
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function heatmapColor(normalized: number): string {
+  const start = { r: 0, g: 120, b: 255 };
+  const end = { r: 255, g: 0, b: 0 };
+  const t = clamp01(normalized);
+  const r = Math.round(start.r + (end.r - start.r) * t);
+  const g = Math.round(start.g + (end.g - start.g) * t);
+  const b = Math.round(start.b + (end.b - start.b) * t);
+  const alpha = 0.05 + 0.5 * t;
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 }

@@ -106,6 +106,7 @@ export default function App() {
   const [algoError, setAlgoError] = useState<string | null>(null);
 
   const [showVisited, setShowVisited] = useState<boolean>(false);
+  const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
   const [runResult, setRunResult] = useState<{
@@ -824,6 +825,15 @@ export default function App() {
             />
             Show explored nodes
           </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={showCostHeatmap}
+              onChange={(e) => setShowCostHeatmap(e.target.checked)}
+              style={{ width: 'auto', marginRight: 8 }}
+            />
+            Show cost heatmap
+          </label>
 
           {metrics ? (
             <div className="section">
@@ -876,6 +886,7 @@ export default function App() {
         pathCells={runResult?.res.path ?? []}
         pathLatLngs={pathLatLngs}
         showVisited={showVisited}
+        showCostHeatmap={showCostHeatmap}
       />
     </div>
   );
