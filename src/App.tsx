@@ -57,14 +57,6 @@ interface ParsedMapState {
 }
 
 const COST_TYPE_COLORS = ['#2f9e44', '#fd7e14', '#845ef7', '#12b886', '#e64980', '#339af0'];
-const COST_TYPE_COLOR_NAMES: Record<string, string> = {
-  '#2f9e44': 'Green',
-  '#fd7e14': 'Orange',
-  '#845ef7': 'Purple',
-  '#12b886': 'Teal',
-  '#e64980': 'Pink',
-  '#339af0': 'Blue'
-};
 const DEFAULT_COST_ZONE_TYPES: CostZoneType[] = [
   { id: 'residential', name: 'Residential', multiplier: 1.5, color: '#fd7e14' },
   { id: 'heavy-traffic', name: 'Heavy traffic', multiplier: 2.5, color: '#e64980' },
@@ -108,7 +100,6 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [newCostTypeName, setNewCostTypeName] = useState<string>('');
   const [newCostTypeMultiplier, setNewCostTypeMultiplier] = useState<number>(1.2);
-  const [newCostTypeColor, setNewCostTypeColor] = useState<string>(pickNextCostTypeColor(DEFAULT_COST_ZONE_TYPES));
 
   const costTypeById = useMemo(() => {
     return new Map(costZoneTypes.map((type) => [type.id, type]));
@@ -117,7 +108,6 @@ export default function App() {
   const selectedCostType =
     drawMode.kind === 'COST' ? costTypeById.get(drawMode.costTypeId) ?? costZoneTypes[0] ?? null : null;
   const drawSelection = drawMode.kind === 'NO_FLY' ? 'NO_FLY' : drawMode.costTypeId;
-  const suggestedNewColor = pickNextCostTypeColor(costZoneTypes);
 
   useEffect(() => {
     if (drawMode.kind !== 'COST') return;
@@ -129,15 +119,6 @@ export default function App() {
       setDrawMode({ kind: 'NO_FLY' });
     }
   }, [costTypeById, costZoneTypes, drawMode]);
-
-  useEffect(() => {
-    setNewCostTypeColor((prev) => {
-      if (!prev || costZoneTypes.some((type) => type.color === prev)) {
-        return suggestedNewColor;
-      }
-      return prev;
-    });
-  }, [costZoneTypes, suggestedNewColor]);
 
   // Keep planning bounds initialized to first available view bounds so the user can immediately run.
   useEffect(() => {
@@ -588,21 +569,6 @@ export default function App() {
                       );
                     }}
                   />
-                  <select
-                    value={type.color}
-                    onChange={(e) => {
-                      const color = e.target.value;
-                      setCostZoneTypes((prev) =>
-                        prev.map((entry) => (entry.id === type.id ? { ...entry, color } : entry))
-                      );
-                    }}
-                  >
-                    {COST_TYPE_COLORS.map((color) => (
-                      <option key={color} value={color}>
-                        {COST_TYPE_COLOR_NAMES[color] ?? color}
-                      </option>
-                    ))}
-                  </select>
                   <input
                     type="number"
                     min={0.1}
@@ -641,20 +607,13 @@ export default function App() {
             })}
           </div>
           <div className="zone-type-row zone-type-row-add">
-            <span className="zone-type-color preview" style={{ background: newCostTypeColor }} />
+            <span className="zone-type-color preview" style={{ background: pickNextCostTypeColor(costZoneTypes) }} />
             <input
               type="text"
               placeholder="New type name"
               value={newCostTypeName}
               onChange={(e) => setNewCostTypeName(e.target.value)}
             />
-            <select value={newCostTypeColor} onChange={(e) => setNewCostTypeColor(e.target.value)}>
-              {COST_TYPE_COLORS.map((color) => (
-                <option key={color} value={color}>
-                  {COST_TYPE_COLOR_NAMES[color] ?? color}
-                </option>
-              ))}
-            </select>
             <input
               type="number"
               min={0.1}
@@ -673,10 +632,10 @@ export default function App() {
                 const name = newCostTypeName.trim();
                 if (!name) return;
                 const multiplier = clamp(newCostTypeMultiplier, 0.1, 50);
+                const color = pickNextCostTypeColor(costZoneTypes);
                 const id = makeCostTypeId(name, costZoneTypes);
-                setCostZoneTypes((prev) => [...prev, { id, name, multiplier, color: newCostTypeColor }]);
+                setCostZoneTypes((prev) => [...prev, { id, name, multiplier, color }]);
                 setNewCostTypeName('');
-                setNewCostTypeColor(suggestedNewColor);
               }}
             >
               +

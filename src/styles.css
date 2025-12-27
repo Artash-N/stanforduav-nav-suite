@@ -95,7 +95,7 @@ button {
 
 .zone-type-row {
   display: grid;
-  grid-template-columns: 16px 1fr 110px 90px 32px;
+  grid-template-columns: 16px 1fr 90px 32px;
   gap: 8px;
   align-items: center;
 }
