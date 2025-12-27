@@ -77,6 +77,15 @@ const DEFAULT_COST_ZONE_TYPES: CostZoneType[] = [
 ];
 const DEFAULT_AVOID_HIGH_MULTIPLIER = false;
 const DEFAULT_ROLLOFF_DISTANCE_M = 50;
+const WAYPOINT_COLOR_OPTIONS = [
+  { name: 'Light purple', color: '#b197fc' },
+  { name: 'Blue', color: '#339af0' },
+  { name: 'Teal', color: '#12b886' },
+  { name: 'Orange', color: '#f08c00' },
+  { name: 'Pink', color: '#e64980' },
+  { name: 'Green', color: '#2f9e44' }
+];
+const DEFAULT_WAYPOINT_COLOR = '#f08c00';
 
 export default function App() {
   const [resolutionM, setResolutionM] = useState<number>(10);
@@ -124,6 +133,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [newCostTypeName, setNewCostTypeName] = useState<string>('');
   const [newCostTypeMultiplier, setNewCostTypeMultiplier] = useState<number>(1.2);
+  const [waypointColors, setWaypointColors] = useState<string[]>([]);
 
   const costTypeById = useMemo(() => {
     return new Map(costZoneTypes.map((type) => [type.id, type]));
@@ -291,6 +301,19 @@ export default function App() {
     });
   }, [averagedPathPointsM]);
 
+  useEffect(() => {
+    setWaypointColors((prev) => {
+      if (prev.length === waypointLatLngs.length) return prev;
+      if (prev.length > waypointLatLngs.length) {
+        return prev.slice(0, waypointLatLngs.length);
+      }
+      return [
+        ...prev,
+        ...Array.from({ length: waypointLatLngs.length - prev.length }, () => DEFAULT_WAYPOINT_COLOR)
+      ];
+    });
+  }, [waypointLatLngs.length]);
+
   const metrics = useMemo<PathRunMetrics | null>(() => {
     if (!runResult || !raster.env) return null;
     const { res, runtimeMs, algo } = runResult;
@@ -350,6 +373,14 @@ export default function App() {
 
   function onZoneDeleted(zoneId: string) {
     setZones((prev) => prev.filter((z) => z.id !== zoneId));
+  }
+
+  function onWaypointColorChange(index: number, color: string) {
+    setWaypointColors((prev) => {
+      const next = [...prev];
+      next[index] = color;
+      return next;
+    });
   }
 
   async function runAlgorithm() {
@@ -992,9 +1023,12 @@ export default function App() {
         pathCells={pathCells}
         pathLatLngs={pathLatLngs}
         waypointLatLngs={waypointLatLngs}
+        waypointColors={waypointColors}
+        waypointColorOptions={WAYPOINT_COLOR_OPTIONS}
         showVisited={showVisited}
         showCostHeatmap={showCostHeatmap}
         showWaypoints={showWaypoints}
+        onWaypointColorChange={onWaypointColorChange}
       />
     </div>
   );
