@@ -10,7 +10,6 @@ import { lonLatToMercator, mercatorToLonLat } from './geo/mercator';
 import { latLngBoundsToMercatorBounds, rasterizeZonesToGrid } from './env/rasterize';
 
 const MAX_CELLS = 250000; // performance guardrail
-const NO_FLY_BUFFER_M = 10;
 
 export default function App() {
   const [resolutionM, setResolutionM] = useState<number>(10);
@@ -20,6 +19,7 @@ export default function App() {
 
   const [drawZoneType, setDrawZoneType] = useState<ZoneType>('NO_FLY');
   const [drawMultiplier, setDrawMultiplier] = useState<number>(3);
+  const [noFlyBufferM, setNoFlyBufferM] = useState<number>(10);
 
   const [start, setStart] = useState<LatLng | null>(null);
   const [goal, setGoal] = useState<LatLng | null>(null);
@@ -110,6 +110,19 @@ export default function App() {
     setRunResult(null);
   }, [planningBounds, resolutionM, zones]);
 
+  useEffect(() => {
+    setZones((prev) => {
+      let changed = false;
+      const next = prev.map((z) => {
+        if (z.type !== 'NO_FLY') return z;
+        const buffered = turf.buffer(z.shape as any, noFlyBufferM, { units: 'meters' }) as any;
+        changed = true;
+        return { ...z, buffered };
+      });
+      return changed ? next : prev;
+    });
+  }, [noFlyBufferM]);
+
   const pathLatLngs = useMemo<LatLng[]>(() => {
     if (!runResult?.res.path || runResult.res.path.length === 0) return [];
     if (!raster.env) return [];
@@ -137,7 +150,7 @@ export default function App() {
   function onZoneCreated(zoneId: string, shape: Feature<Polygon | MultiPolygon>) {
     setZones((prev) => {
       if (drawZoneType === 'NO_FLY') {
-        const buffered = turf.buffer(shape as any, NO_FLY_BUFFER_M, { units: 'meters' }) as any;
+        const buffered = turf.buffer(shape as any, noFlyBufferM, { units: 'meters' }) as any;
         const z: Zone = {
           id: zoneId,
           name: `No-fly ${prev.filter((p) => p.type === 'NO_FLY').length + 1}`,
@@ -164,7 +177,7 @@ export default function App() {
       prev.map((z) => {
         if (z.id !== zoneId) return z;
         if (z.type === 'NO_FLY') {
-          const buffered = turf.buffer(shape as any, NO_FLY_BUFFER_M, { units: 'meters' }) as any;
+          const buffered = turf.buffer(shape as any, noFlyBufferM, { units: 'meters' }) as any;
           return { ...z, shape, buffered };
         }
         return { ...z, shape };
@@ -320,7 +333,7 @@ export default function App() {
         <div className="section">
           <label>Drawing mode</label>
           <select value={drawZoneType} onChange={(e) => setDrawZoneType(e.target.value as ZoneType)}>
-            <option value="NO_FLY">No-fly zone (10m buffer)</option>
+            <option value="NO_FLY">No-fly zone (buffered)</option>
             <option value="COST">Cost zone (multiplier)</option>
           </select>
 
@@ -337,9 +350,23 @@ export default function App() {
               />
             </>
           ) : (
-            <div className="small">
-              No-fly zones are blocked for planning, with an automatic <b>{NO_FLY_BUFFER_M}m</b> buffer.
-            </div>
+            <>
+              <label>No-fly buffer (meters)</label>
+              <input
+                type="range"
+                min={0}
+                max={50}
+                step={1}
+                value={noFlyBufferM}
+                onChange={(e) => setNoFlyBufferM(parseInt(e.target.value, 10))}
+              />
+              <div className="small">
+                {noFlyBufferM} m buffer
+              </div>
+              <div className="small">
+                No-fly zones are blocked for planning, with an automatic <b>{noFlyBufferM}m</b> buffer.
+              </div>
+            </>
           )}
 
           <hr />
