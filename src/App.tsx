@@ -106,6 +106,8 @@ export default function App() {
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
   const [useShortcutting, setUseShortcutting] = useState<boolean>(false);
   const [shortcuttingMultiplierTolerance, setShortcuttingMultiplierTolerance] = useState<number>(0);
+  const [usePathAveraging, setUsePathAveraging] = useState<boolean>(false);
+  const [pathAveragingDistanceM, setPathAveragingDistanceM] = useState<number>(5);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
   const [runResult, setRunResult] = useState<{
@@ -147,6 +149,12 @@ export default function App() {
       setPlanningBounds(currentViewBounds);
     }
   }, [planningBounds, currentViewBounds]);
+
+  useEffect(() => {
+    if (!useShortcutting) {
+      setUsePathAveraging(false);
+    }
+  }, [useShortcutting]);
 
   useEffect(() => {
     setZones((prev) =>
@@ -234,20 +242,29 @@ export default function App() {
       : runResult.res.path;
   }, [runResult, raster.env, useShortcutting, shortcuttingMultiplierTolerance]);
 
-  const pathLatLngs = useMemo<LatLng[]>(() => {
+  const pathPointsM = useMemo<{ xM: number; yM: number }[]>(() => {
     if (pathCells.length === 0) return [];
     if (!raster.env) return [];
-    return pathCells.map((id) => {
-      const { xM, yM } = raster.env.cellCenter(id);
+    return pathCells.map((id) => raster.env.cellCenter(id));
+  }, [pathCells, raster.env]);
+
+  const averagedPathPointsM = useMemo<{ xM: number; yM: number }[]>(() => {
+    if (!useShortcutting || !usePathAveraging) return pathPointsM;
+    return averageClosePoints(pathPointsM, pathAveragingDistanceM);
+  }, [pathAveragingDistanceM, pathPointsM, usePathAveraging, useShortcutting]);
+
+  const pathLatLngs = useMemo<LatLng[]>(() => {
+    if (averagedPathPointsM.length === 0) return [];
+    return averagedPathPointsM.map(({ xM, yM }) => {
       const { lat, lng } = mercatorToLonLat(xM, yM);
       return { lat, lng };
     });
-  }, [pathCells, raster.env]);
+  }, [averagedPathPointsM]);
 
   const metrics = useMemo<PathRunMetrics | null>(() => {
     if (!runResult || !raster.env) return null;
     const { res, runtimeMs, algo } = runResult;
-    const pathLengthM = computePathLengthM(raster.env, pathCells);
+    const pathLengthM = computePathLengthMFromPoints(averagedPathPointsM);
     return {
       algorithmId: algo.id,
       algorithmName: algo.name,
@@ -256,7 +273,7 @@ export default function App() {
       pathLengthM,
       cost: res.cost
     };
-  }, [pathCells, raster.env, runResult]);
+  }, [averagedPathPointsM, raster.env, runResult]);
 
   function onZoneCreated(zoneId: string, shape: Feature<Polygon | MultiPolygon>) {
     setZones((prev) => {
@@ -853,6 +870,29 @@ export default function App() {
           <label>
             <input
               type="checkbox"
+              checked={usePathAveraging}
+              onChange={(e) => setUsePathAveraging(e.target.checked)}
+              style={{ width: 'auto', marginRight: 8 }}
+              disabled={!useShortcutting}
+            />
+            Average shortcut points that are too close
+          </label>
+          <label>Point averaging distance</label>
+          <input
+            type="range"
+            min={1}
+            max={50}
+            step={1}
+            value={pathAveragingDistanceM}
+            onChange={(e) => setPathAveragingDistanceM(parseInt(e.target.value, 10))}
+            disabled={!useShortcutting || !usePathAveraging}
+          />
+          <div className="small">
+            Merge points within {pathAveragingDistanceM} m into their average position after shortcutting.
+          </div>
+          <label>
+            <input
+              type="checkbox"
               checked={showCostHeatmap}
               onChange={(e) => setShowCostHeatmap(e.target.checked)}
               style={{ width: 'auto', marginRight: 8 }}
@@ -1156,15 +1196,44 @@ function parseMapState(raw: any): ParsedMapState | null {
   return null;
 }
 
-function computePathLengthM(env: any, path: number[]): number {
-  if (path.length <= 1) return 0;
+function computePathLengthMFromPoints(points: { xM: number; yM: number }[]): number {
+  if (points.length <= 1) return 0;
   let total = 0;
-  for (let i = 1; i < path.length; i++) {
-    const a = env.cellCenter(path[i - 1]);
-    const b = env.cellCenter(path[i]);
-    total += Math.hypot(a.xM - b.xM, a.yM - b.yM);
+  for (let i = 1; i < points.length; i++) {
+    total += Math.hypot(points[i].xM - points[i - 1].xM, points[i].yM - points[i - 1].yM);
   }
   return total;
+}
+
+function averageClosePoints(
+  points: { xM: number; yM: number }[],
+  distanceThresholdM: number
+): { xM: number; yM: number }[] {
+  if (points.length <= 1) return points;
+  const threshold = Math.max(0, distanceThresholdM);
+  if (threshold === 0) return points.slice();
+  const averaged: { xM: number; yM: number }[] = [];
+  let sumX = points[0].xM;
+  let sumY = points[0].yM;
+  let count = 1;
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const current = points[i];
+    const distance = Math.hypot(current.xM - prev.xM, current.yM - prev.yM);
+    if (distance <= threshold) {
+      sumX += current.xM;
+      sumY += current.yM;
+      count += 1;
+    } else {
+      averaged.push({ xM: sumX / count, yM: sumY / count });
+      sumX = current.xM;
+      sumY = current.yM;
+      count = 1;
+    }
+  }
+  averaged.push({ xM: sumX / count, yM: sumY / count });
+  return averaged;
 }
 
 function shortcutPath(env: GridEnvironment, path: number[], multiplierTolerance: number): number[] {
