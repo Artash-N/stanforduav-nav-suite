@@ -5,7 +5,7 @@ import * as turf from '@turf/turf';
 import { fetchAlgorithms, runAlgorithm as runAlgorithmApi } from './api/client';
 import type { AlgorithmInfo } from './api/types';
 import { MapView } from './components/MapView';
-import type { LatLng, LatLngBounds, Zone, ZoneType, PathRunMetrics } from './types';
+import type { CostZoneType, LatLng, LatLngBounds, Zone, PathRunMetrics } from './types';
 import { lonLatToMercator, mercatorToLonLat } from './geo/mercator';
 import { latLngBoundsToMercatorBounds, rasterizeZonesToGrid } from './env/rasterize';
 
@@ -13,6 +13,8 @@ const MAX_CELLS = 250000; // performance guardrail
 const DEFAULT_NO_FLY_BUFFER_M = 10;
 
 type BasemapId = 'osm' | 'topo' | 'satellite' | 'humanitarian';
+
+type DrawMode = { kind: 'NO_FLY' } | { kind: 'COST'; costTypeId: string };
 
 type SerializedZone =
   | {
@@ -25,12 +27,12 @@ type SerializedZone =
       id: string;
       name: string;
       type: 'COST';
-      multiplier: number;
+      costTypeId: string;
       shape: Feature<Polygon | MultiPolygon>;
     };
 
 interface MapState {
-  version: 1;
+  version: 2;
   zones: SerializedZone[];
   start: LatLng | null;
   goal: LatLng | null;
@@ -38,8 +40,28 @@ interface MapState {
   resolutionM: number;
   basemap: BasemapId;
   noFlyBufferM: number;
-  drawMultiplier: number;
+  costZoneTypes: CostZoneType[];
+  drawMode: DrawMode;
 }
+
+interface ParsedMapState {
+  zones: SerializedZone[];
+  start: LatLng | null;
+  goal: LatLng | null;
+  planningBounds: LatLngBounds | null;
+  resolutionM: number;
+  basemap: BasemapId;
+  noFlyBufferM: number;
+  costZoneTypes: CostZoneType[];
+  drawMode: DrawMode;
+}
+
+const COST_TYPE_COLORS = ['#2f9e44', '#fd7e14', '#845ef7', '#12b886', '#e64980', '#339af0'];
+const DEFAULT_COST_ZONE_TYPES: CostZoneType[] = [
+  { id: 'residential', name: 'Residential', multiplier: 1.5, color: '#fd7e14' },
+  { id: 'heavy-traffic', name: 'Heavy traffic', multiplier: 2.5, color: '#e64980' },
+  { id: 'open-space', name: 'Open space', multiplier: 0.7, color: '#2f9e44' }
+];
 
 export default function App() {
   const [resolutionM, setResolutionM] = useState<number>(10);
@@ -47,8 +69,8 @@ export default function App() {
 
   const [basemap, setBasemap] = useState<BasemapId>('osm');
 
-  const [drawZoneType, setDrawZoneType] = useState<ZoneType>('NO_FLY');
-  const [drawMultiplier, setDrawMultiplier] = useState<number>(3);
+  const [costZoneTypes, setCostZoneTypes] = useState<CostZoneType[]>(() => DEFAULT_COST_ZONE_TYPES);
+  const [drawMode, setDrawMode] = useState<DrawMode>({ kind: 'NO_FLY' });
   const [noFlyBufferM, setNoFlyBufferM] = useState<number>(DEFAULT_NO_FLY_BUFFER_M);
 
   const [start, setStart] = useState<LatLng | null>(null);
@@ -76,6 +98,27 @@ export default function App() {
     runtimeMs: number;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [newCostTypeName, setNewCostTypeName] = useState<string>('');
+  const [newCostTypeMultiplier, setNewCostTypeMultiplier] = useState<number>(1.2);
+
+  const costTypeById = useMemo(() => {
+    return new Map(costZoneTypes.map((type) => [type.id, type]));
+  }, [costZoneTypes]);
+
+  const selectedCostType =
+    drawMode.kind === 'COST' ? costTypeById.get(drawMode.costTypeId) ?? costZoneTypes[0] ?? null : null;
+  const drawSelection = drawMode.kind === 'NO_FLY' ? 'NO_FLY' : drawMode.costTypeId;
+
+  useEffect(() => {
+    if (drawMode.kind !== 'COST') return;
+    if (costTypeById.has(drawMode.costTypeId)) return;
+    const fallback = costZoneTypes[0];
+    if (fallback) {
+      setDrawMode({ kind: 'COST', costTypeId: fallback.id });
+    } else {
+      setDrawMode({ kind: 'NO_FLY' });
+    }
+  }, [costTypeById, costZoneTypes, drawMode]);
 
   // Keep planning bounds initialized to first available view bounds so the user can immediately run.
   useEffect(() => {
@@ -140,11 +183,12 @@ export default function App() {
     const { env } = rasterizeZonesToGrid({
       cellSizeM: resolutionM,
       bounds: boundsM,
-      zones
+      zones,
+      costZoneTypes
     });
 
     return { env, cellCount, error: null as string | null };
-  }, [planningBounds, resolutionM, zones]);
+  }, [costZoneTypes, planningBounds, resolutionM, zones]);
 
   // If the grid definition changes, any previously returned path/visited cell IDs
   // are no longer meaningful. Clear the visualization to avoid confusing results.
@@ -178,7 +222,7 @@ export default function App() {
 
   function onZoneCreated(zoneId: string, shape: Feature<Polygon | MultiPolygon>) {
     setZones((prev) => {
-      if (drawZoneType === 'NO_FLY') {
+      if (drawMode.kind === 'NO_FLY') {
         const buffered = turf.buffer(shape as any, noFlyBufferM, { units: 'meters' }) as any;
         const z: Zone = {
           id: zoneId,
@@ -190,11 +234,16 @@ export default function App() {
         return [...prev, z];
       }
 
+      const costType = selectedCostType ?? costZoneTypes[0];
+      if (!costType) {
+        return prev;
+      }
+      const typeIndex = prev.filter((p) => p.type === 'COST' && p.costTypeId === costType.id).length + 1;
       const z: Zone = {
         id: zoneId,
-        name: `Cost zone ${prev.filter((p) => p.type === 'COST').length + 1}`,
+        name: `${costType.name} ${typeIndex}`,
         type: 'COST',
-        multiplier: clamp(drawMultiplier, 0.1, 50),
+        costTypeId: costType.id,
         shape
       };
       return [...prev, z];
@@ -298,6 +347,13 @@ export default function App() {
 
   const costZones = zones.filter((z) => z.type === 'COST') as Array<Extract<Zone, { type: 'COST' }>>;
   const noFlyCount = zones.filter((z) => z.type === 'NO_FLY').length;
+  const costZoneCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    costZones.forEach((zone) => {
+      counts.set(zone.costTypeId, (counts.get(zone.costTypeId) ?? 0) + 1);
+    });
+    return counts;
+  }, [costZones]);
   const currentMapState = useMemo<MapState>(() => {
     const serializedZones: SerializedZone[] = zones.map((zone) => {
       if (zone.type === 'NO_FLY') {
@@ -312,13 +368,13 @@ export default function App() {
         id: zone.id,
         name: zone.name,
         type: 'COST',
-        multiplier: zone.multiplier,
+        costTypeId: zone.costTypeId,
         shape: zone.shape
       };
     });
 
     return {
-      version: 1,
+      version: 2,
       zones: serializedZones,
       start,
       goal,
@@ -326,9 +382,10 @@ export default function App() {
       resolutionM,
       basemap,
       noFlyBufferM,
-      drawMultiplier
+      costZoneTypes,
+      drawMode
     };
-  }, [basemap, drawMultiplier, goal, noFlyBufferM, planningBounds, resolutionM, start, zones]);
+  }, [basemap, costZoneTypes, drawMode, goal, noFlyBufferM, planningBounds, resolutionM, start, zones]);
 
   return (
     <div className="app">
@@ -404,7 +461,7 @@ export default function App() {
                       const buffered = turf.buffer(zone.shape as any, next.noFlyBufferM, { units: 'meters' }) as any;
                       return { ...zone, buffered } as Zone;
                     }
-                    return { ...zone, multiplier: clamp(zone.multiplier, 0.1, 50) } as Zone;
+                    return { ...zone } as Zone;
                   })
                 );
                 setStart(next.start);
@@ -413,7 +470,8 @@ export default function App() {
                 setResolutionM(next.resolutionM);
                 setBasemap(next.basemap);
                 setNoFlyBufferM(next.noFlyBufferM);
-                setDrawMultiplier(clamp(next.drawMultiplier, 0.1, 50));
+                setCostZoneTypes(next.costZoneTypes);
+                setDrawMode(next.drawMode);
                 setPlacementMode(null);
                 setRunResult(null);
               } catch (e: any) {
@@ -456,9 +514,27 @@ export default function App() {
 
         <div className="section">
           <label>Drawing mode</label>
-          <select value={drawZoneType} onChange={(e) => setDrawZoneType(e.target.value as ZoneType)}>
+          <select
+            value={drawSelection}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === 'NO_FLY') {
+                setDrawMode({ kind: 'NO_FLY' });
+              } else {
+                setDrawMode({ kind: 'COST', costTypeId: value });
+              }
+            }}
+          >
             <option value="NO_FLY">No-fly zone ({noFlyBufferM}m buffer)</option>
-            <option value="COST">Cost zone (multiplier)</option>
+            {costZoneTypes.length > 0 ? (
+              <optgroup label="Cost zone types">
+                {costZoneTypes.map((type) => (
+                  <option key={type.id} value={type.id}>
+                    {type.name} (x{type.multiplier})
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
           <label>No-fly buffer (meters)</label>
           <input
@@ -470,34 +546,110 @@ export default function App() {
             onChange={(e) => setNoFlyBufferM(parseInt(e.target.value, 10))}
           />
           <div className="small">{noFlyBufferM} m</div>
+          <div className="small">
+            No-fly zones are blocked for planning, with an automatic <b>{noFlyBufferM}m</b> buffer.
+          </div>
 
-          {drawZoneType === 'COST' ? (
-            <>
-              <label>Cost multiplier (discouraged &gt; 1, encouraged &lt; 1)</label>
-              <input
-                type="number"
-                min={0.1}
-                max={50}
-                step={0.1}
-                value={drawMultiplier}
-                onChange={(e) => {
-                  const value = clamp(parseFloat(e.target.value), 0.1, 50);
-                  setDrawMultiplier(value);
-                  setZones((prev) =>
-                    prev.map((zone) => (zone.type === 'COST' ? { ...zone, multiplier: value } : zone))
-                  );
-                }}
-              />
-            </>
-          ) : (
-            <div className="small">
-              No-fly zones are blocked for planning, with an automatic <b>{noFlyBufferM}m</b> buffer.
-            </div>
-          )}
+          <label>Cost zone types</label>
+          <div className="small">Create named cost zone types and set their multipliers.</div>
+          <div className="zone-type-list">
+            {costZoneTypes.map((type) => {
+              const usageCount = costZoneCounts.get(type.id) ?? 0;
+              const disableDelete = usageCount > 0 || costZoneTypes.length <= 1;
+              return (
+                <div className="zone-type-row" key={type.id}>
+                  <span className="zone-type-color" style={{ background: type.color }} />
+                  <input
+                    type="text"
+                    value={type.name}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      setCostZoneTypes((prev) =>
+                        prev.map((entry) => (entry.id === type.id ? { ...entry, name } : entry))
+                      );
+                    }}
+                  />
+                  <input
+                    type="number"
+                    min={0.1}
+                    max={50}
+                    step={0.1}
+                    value={type.multiplier}
+                    onChange={(e) => {
+                      const multiplier = clamp(parseFloat(e.target.value), 0.1, 50);
+                      setCostZoneTypes((prev) =>
+                        prev.map((entry) => (entry.id === type.id ? { ...entry, multiplier } : entry))
+                      );
+                    }}
+                  />
+                  <button
+                    className="icon-button"
+                    title={
+                      disableDelete
+                        ? usageCount > 0
+                          ? 'Delete is disabled while zones use this type.'
+                          : 'At least one cost type must remain.'
+                        : 'Delete this type'
+                    }
+                    onClick={() => {
+                      if (disableDelete) return;
+                      setCostZoneTypes((prev) => prev.filter((entry) => entry.id !== type.id));
+                      if (drawMode.kind === 'COST' && drawMode.costTypeId === type.id) {
+                        setDrawMode({ kind: 'NO_FLY' });
+                      }
+                    }}
+                    disabled={disableDelete}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="zone-type-row zone-type-row-add">
+            <span className="zone-type-color preview" style={{ background: pickNextCostTypeColor(costZoneTypes) }} />
+            <input
+              type="text"
+              placeholder="New type name"
+              value={newCostTypeName}
+              onChange={(e) => setNewCostTypeName(e.target.value)}
+            />
+            <input
+              type="number"
+              min={0.1}
+              max={50}
+              step={0.1}
+              value={newCostTypeMultiplier}
+              onChange={(e) => {
+                const value = parseFloat(e.target.value);
+                setNewCostTypeMultiplier(Number.isFinite(value) ? value : 0.1);
+              }}
+            />
+            <button
+              className="icon-button"
+              title="Add cost type"
+              onClick={() => {
+                const name = newCostTypeName.trim();
+                if (!name) return;
+                const multiplier = clamp(newCostTypeMultiplier, 0.1, 50);
+                const color = pickNextCostTypeColor(costZoneTypes);
+                const id = makeCostTypeId(name, costZoneTypes);
+                setCostZoneTypes((prev) => [...prev, { id, name, multiplier, color }]);
+                setNewCostTypeName('');
+              }}
+            >
+              +
+            </button>
+          </div>
 
           <hr />
           <div className="small">
             Zones: <b>{noFlyCount}</b> no-fly, <b>{costZones.length}</b> cost.
+            <br />
+            Cost types:{' '}
+            {costZoneTypes
+              .map((type) => `${type.name} (${costZoneCounts.get(type.id) ?? 0})`)
+              .join(', ')}
             <br />
             Use the polygon/rectangle tools on the map (top-left) to draw.
             <br />
@@ -594,7 +746,8 @@ export default function App() {
 
       <MapView
         zones={zones}
-        drawMode={{ zoneType: drawZoneType, multiplier: drawMultiplier }}
+        costZoneTypes={costZoneTypes}
+        drawMode={{ kind: drawMode.kind, costType: selectedCostType }}
         onZoneCreated={onZoneCreated}
         onZoneEdited={onZoneEdited}
         onZoneDeleted={onZoneDeleted}
@@ -661,13 +814,68 @@ function isPolygonFeature(value: any): value is Feature<Polygon | MultiPolygon> 
   return value?.type === 'Feature' && (geometryType === 'Polygon' || geometryType === 'MultiPolygon');
 }
 
-function parseMapState(raw: any): MapState | null {
+function pickNextCostTypeColor(types: CostZoneType[]): string {
+  const used = new Set(types.map((type) => type.color));
+  for (const color of COST_TYPE_COLORS) {
+    if (!used.has(color)) return color;
+  }
+  return COST_TYPE_COLORS[types.length % COST_TYPE_COLORS.length] ?? '#6c757d';
+}
+
+function makeCostTypeId(name: string, existing: CostZoneType[]): string {
+  const base =
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'cost-type';
+  const existingIds = new Set(existing.map((type) => type.id));
+  let candidate = base;
+  let suffix = 2;
+  while (existingIds.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function coerceCostZoneTypes(raw: any, fallback: CostZoneType[]): CostZoneType[] {
+  if (!Array.isArray(raw)) return fallback;
+  const seen = new Set<string>();
+  const types: CostZoneType[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue;
+    if (!Number.isFinite(entry.multiplier) || typeof entry.color !== 'string') continue;
+    if (seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    types.push({
+      id: entry.id,
+      name: entry.name,
+      multiplier: clamp(entry.multiplier, 0.1, 50),
+      color: entry.color
+    });
+  }
+  return types.length > 0 ? types : fallback;
+}
+
+function coerceDrawMode(raw: any, costZoneTypes: CostZoneType[]): DrawMode | null {
+  if (!raw || typeof raw !== 'object') return { kind: 'NO_FLY' };
+  if (raw.kind === 'NO_FLY') return { kind: 'NO_FLY' };
+  if (raw.kind === 'COST') {
+    if (typeof raw.costTypeId !== 'string') return null;
+    const exists = costZoneTypes.some((type) => type.id === raw.costTypeId);
+    if (exists) return { kind: 'COST', costTypeId: raw.costTypeId };
+    if (costZoneTypes[0]) return { kind: 'COST', costTypeId: costZoneTypes[0].id };
+  }
+  return null;
+}
+
+function parseMapState(raw: any): ParsedMapState | null {
   if (!raw || typeof raw !== 'object') return null;
-  if (raw.version !== 1) return null;
   if (!basemapOptions.has(raw.basemap)) return null;
   if (!Number.isFinite(raw.resolutionM)) return null;
   if (!Number.isFinite(raw.noFlyBufferM)) return null;
-  if (!Number.isFinite(raw.drawMultiplier)) return null;
 
   const start = raw.start;
   if (start !== null && !isLatLng(start)) return null;
@@ -677,46 +885,125 @@ function parseMapState(raw: any): MapState | null {
   if (planningBounds !== null && !isLatLngBounds(planningBounds)) return null;
 
   if (!Array.isArray(raw.zones)) return null;
-  const zones: SerializedZone[] = [];
-  for (const zone of raw.zones) {
-    if (!zone || typeof zone !== 'object') return null;
-    if (typeof zone.id !== 'string' || typeof zone.name !== 'string') return null;
-    if (zone.type === 'NO_FLY') {
-      if (!isPolygonFeature(zone.shape)) return null;
-      zones.push({
-        id: zone.id,
-        name: zone.name,
-        type: 'NO_FLY',
-        shape: zone.shape
-      });
-      continue;
+
+  if (raw.version === 2) {
+    const costZoneTypes = coerceCostZoneTypes(raw.costZoneTypes, DEFAULT_COST_ZONE_TYPES);
+    const costTypeIds = new Set(costZoneTypes.map((type) => type.id));
+    const zones: SerializedZone[] = [];
+    for (const zone of raw.zones) {
+      if (!zone || typeof zone !== 'object') return null;
+      if (typeof zone.id !== 'string' || typeof zone.name !== 'string') return null;
+      if (zone.type === 'NO_FLY') {
+        if (!isPolygonFeature(zone.shape)) return null;
+        zones.push({
+          id: zone.id,
+          name: zone.name,
+          type: 'NO_FLY',
+          shape: zone.shape
+        });
+        continue;
+      }
+      if (zone.type === 'COST') {
+        if (!isPolygonFeature(zone.shape)) return null;
+        if (typeof zone.costTypeId !== 'string') return null;
+        const costTypeId = costTypeIds.has(zone.costTypeId) ? zone.costTypeId : costZoneTypes[0]?.id;
+        if (!costTypeId) return null;
+        zones.push({
+          id: zone.id,
+          name: zone.name,
+          type: 'COST',
+          costTypeId,
+          shape: zone.shape
+        });
+        continue;
+      }
+      return null;
     }
-    if (zone.type === 'COST') {
-      if (!isPolygonFeature(zone.shape)) return null;
-      if (!Number.isFinite(zone.multiplier)) return null;
-      zones.push({
-        id: zone.id,
-        name: zone.name,
-        type: 'COST',
-        multiplier: zone.multiplier,
-        shape: zone.shape
-      });
-      continue;
-    }
-    return null;
+
+    const drawMode = coerceDrawMode(raw.drawMode, costZoneTypes);
+    if (!drawMode) return null;
+
+    return {
+      zones,
+      start: start ?? null,
+      goal: goal ?? null,
+      planningBounds: planningBounds ?? null,
+      resolutionM: raw.resolutionM,
+      basemap: raw.basemap,
+      noFlyBufferM: raw.noFlyBufferM,
+      costZoneTypes,
+      drawMode
+    };
   }
 
-  return {
-    version: 1,
-    zones,
-    start: start ?? null,
-    goal: goal ?? null,
-    planningBounds: planningBounds ?? null,
-    resolutionM: raw.resolutionM,
-    basemap: raw.basemap,
-    noFlyBufferM: raw.noFlyBufferM,
-    drawMultiplier: raw.drawMultiplier
-  };
+  if (raw.version === 1) {
+    const zones: SerializedZone[] = [];
+    const costTypeByMultiplier = new Map<string, CostZoneType>();
+    const costZoneTypes: CostZoneType[] = [];
+
+    const ensureCostType = (multiplierRaw: number) => {
+      const multiplier = clamp(multiplierRaw, 0.1, 50);
+      const key = String(multiplier);
+      const existing = costTypeByMultiplier.get(key);
+      if (existing) return existing;
+      const name = `Cost x${multiplier}`;
+      const color = pickNextCostTypeColor(costZoneTypes);
+      const id = makeCostTypeId(name, costZoneTypes);
+      const type = { id, name, multiplier, color };
+      costZoneTypes.push(type);
+      costTypeByMultiplier.set(key, type);
+      return type;
+    };
+
+    for (const zone of raw.zones) {
+      if (!zone || typeof zone !== 'object') return null;
+      if (typeof zone.id !== 'string' || typeof zone.name !== 'string') return null;
+      if (zone.type === 'NO_FLY') {
+        if (!isPolygonFeature(zone.shape)) return null;
+        zones.push({
+          id: zone.id,
+          name: zone.name,
+          type: 'NO_FLY',
+          shape: zone.shape
+        });
+        continue;
+      }
+      if (zone.type === 'COST') {
+        if (!isPolygonFeature(zone.shape)) return null;
+        if (!Number.isFinite(zone.multiplier)) return null;
+        const type = ensureCostType(zone.multiplier);
+        zones.push({
+          id: zone.id,
+          name: zone.name,
+          type: 'COST',
+          costTypeId: type.id,
+          shape: zone.shape
+        });
+        continue;
+      }
+      return null;
+    }
+
+    if (costZoneTypes.length === 0 && Number.isFinite(raw.drawMultiplier)) {
+      ensureCostType(raw.drawMultiplier);
+    }
+
+    const normalizedTypes = costZoneTypes.length > 0 ? costZoneTypes : DEFAULT_COST_ZONE_TYPES;
+
+    return {
+      zones,
+      start: start ?? null,
+      goal: goal ?? null,
+      planningBounds: planningBounds ?? null,
+      resolutionM: raw.resolutionM,
+      basemap: raw.basemap,
+      noFlyBufferM: raw.noFlyBufferM,
+      costZoneTypes: normalizedTypes,
+      drawMode: { kind: 'NO_FLY' }
+    };
+  }
+
+  return null;
 }
 
 function computePathLengthM(env: any, path: number[]): number {

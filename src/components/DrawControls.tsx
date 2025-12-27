@@ -3,11 +3,11 @@ import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import 'leaflet-draw';
-import type { ZoneType } from '../types';
+import type { CostZoneType } from '../types';
 
 export interface DrawControlsMode {
-  zoneType: ZoneType;
-  multiplier: number; // used for COST zones
+  kind: 'NO_FLY' | 'COST';
+  costType: CostZoneType | null;
 }
 
 export function DrawControls(props: {
@@ -108,18 +108,13 @@ export function DrawControls(props: {
       const path = layer as unknown as L.Path;
       if (!('setStyle' in path)) return;
 
-      const type = props.mode.zoneType;
-      if (type === 'NO_FLY') {
+      const { kind, costType } = props.mode;
+      if (kind === 'NO_FLY') {
         path.setStyle({ color: '#cc0000', fillColor: '#cc0000', fillOpacity: 0.25 });
         return;
       }
-      // COST: discouraged (>1) vs encouraged (<1)
-      const m = props.mode.multiplier;
-      if (m >= 1) {
-        path.setStyle({ color: '#cc7a00', fillColor: '#cc7a00', fillOpacity: 0.20 });
-      } else {
-        path.setStyle({ color: '#2b8a3e', fillColor: '#2b8a3e', fillOpacity: 0.20 });
-      }
+      const color = costType?.color ?? '#cc7a00';
+      path.setStyle({ color, fillColor: color, fillOpacity: 0.20 });
     }
 
     function onCreated(e: any) {
@@ -182,7 +177,7 @@ export function DrawControls(props: {
       map.removeControl(drawControl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, props.featureGroup, props.mode.zoneType, props.mode.multiplier]);
+  }, [map, props.featureGroup, props.mode.kind, props.mode.costType]);
 
   return null;
 }

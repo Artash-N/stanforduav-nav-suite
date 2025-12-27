@@ -4,13 +4,14 @@ import type { LatLngExpression } from 'leaflet';
 import L from 'leaflet';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 
-import type { LatLng, LatLngBounds, Zone } from '../types';
+import type { CostZoneType, LatLng, LatLngBounds, Zone } from '../types';
 import { DrawControls, MapClickHandler, type DrawControlsMode } from './DrawControls';
 import { CanvasCellsLayer } from './visitedLayer';
 import type { GridEnvironment } from '../env/GridEnvironment';
 
 export function MapView(props: {
   zones: Zone[];
+  costZoneTypes: CostZoneType[];
   drawMode: DrawControlsMode;
   onZoneCreated: (zoneId: string, shape: Feature<Polygon | MultiPolygon>) => void;
   onZoneEdited: (zoneId: string, shape: Feature<Polygon | MultiPolygon>) => void;
@@ -35,13 +36,16 @@ export function MapView(props: {
   showVisited: boolean;
 }) {
   const [featureGroup, setFeatureGroup] = useState<L.FeatureGroup | null>(null);
+  const costTypeById = useMemo(() => {
+    return new Map(props.costZoneTypes.map((type) => [type.id, type]));
+  }, [props.costZoneTypes]);
 
   const center = useMemo<LatLngExpression>(() => {
     // Stanford main quad-ish.
     return [37.4275, -122.1697];
   }, []);
 
-  // Apply styles when zones change (e.g. multiplier updated).
+  // Apply styles when zones or cost types change.
   useEffect(() => {
     if (!featureGroup) return;
 
@@ -56,14 +60,12 @@ export function MapView(props: {
       if (zone.type === 'NO_FLY') {
         path.setStyle({ color: '#cc0000', fillColor: '#cc0000', fillOpacity: 0.25 });
       } else {
-        if (zone.multiplier >= 1) {
-          path.setStyle({ color: '#cc7a00', fillColor: '#cc7a00', fillOpacity: 0.20 });
-        } else {
-          path.setStyle({ color: '#2b8a3e', fillColor: '#2b8a3e', fillOpacity: 0.20 });
-        }
+        const type = costTypeById.get(zone.costTypeId);
+        const color = type?.color ?? '#cc7a00';
+        path.setStyle({ color, fillColor: color, fillOpacity: 0.20 });
       }
     });
-  }, [featureGroup, props.zones]);
+  }, [costTypeById, featureGroup, props.zones]);
 
   useEffect(() => {
     if (!featureGroup) return;
@@ -78,16 +80,16 @@ export function MapView(props: {
         if ('setStyle' in path) {
           if (zone.type === 'NO_FLY') {
             path.setStyle({ color: '#cc0000', fillColor: '#cc0000', fillOpacity: 0.25 });
-          } else if (zone.multiplier >= 1) {
-            path.setStyle({ color: '#cc7a00', fillColor: '#cc7a00', fillOpacity: 0.20 });
           } else {
-            path.setStyle({ color: '#2b8a3e', fillColor: '#2b8a3e', fillOpacity: 0.20 });
+            const type = costTypeById.get(zone.costTypeId);
+            const color = type?.color ?? '#cc7a00';
+            path.setStyle({ color, fillColor: color, fillOpacity: 0.20 });
           }
         }
         featureGroup.addLayer(layer);
       });
     });
-  }, [featureGroup, props.zones]);
+  }, [costTypeById, featureGroup, props.zones]);
 
   const planningRectBounds = useMemo(() => {
     if (!props.planningBounds) return null;

@@ -1,7 +1,7 @@
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import { featureToMercatorPolygons, mercatorBbox, pointInAnyPolygon } from '../geo/polygon';
 import { lonLatToMercator } from '../geo/mercator';
-import type { LatLngBounds, Zone } from '../types';
+import type { CostZoneType, LatLngBounds, Zone } from '../types';
 import { GridEnvironment, type GridBoundsMeters } from './GridEnvironment';
 
 export interface RasterizeResult {
@@ -30,8 +30,10 @@ export function rasterizeZonesToGrid(params: {
   cellSizeM: number;
   bounds: GridBoundsMeters;
   zones: Zone[];
+  costZoneTypes: CostZoneType[];
 }): RasterizeResult {
-  const { cellSizeM, bounds, zones } = params;
+  const { cellSizeM, bounds, zones, costZoneTypes } = params;
+  const costTypeById = new Map(costZoneTypes.map((type) => [type.id, type]));
 
   const width = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) / cellSizeM));
   const height = Math.max(1, Math.ceil((bounds.maxY - bounds.minY) / cellSizeM));
@@ -70,7 +72,9 @@ export function rasterizeZonesToGrid(params: {
         if (z.type === 'NO_FLY') {
           blocked[id] = 1;
         } else {
-          costMultiplier[id] *= z.multiplier;
+          const type = costTypeById.get(z.costTypeId);
+          const multiplier = type?.multiplier ?? 1;
+          costMultiplier[id] *= multiplier;
         }
       }
     }
