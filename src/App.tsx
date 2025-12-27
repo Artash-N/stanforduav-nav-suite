@@ -460,7 +460,13 @@ export default function App() {
                 max={50}
                 step={0.1}
                 value={drawMultiplier}
-                onChange={(e) => setDrawMultiplier(parseFloat(e.target.value))}
+                onChange={(e) => {
+                  const value = clamp(parseFloat(e.target.value), 0.1, 50);
+                  setDrawMultiplier(value);
+                  setZones((prev) =>
+                    prev.map((zone) => (zone.type === 'COST' ? { ...zone, multiplier: value } : zone))
+                  );
+                }}
               />
             </>
           ) : (
@@ -478,29 +484,6 @@ export default function App() {
             Tip: to finish a polygon, click the <b>first</b> vertex (double-click is disabled while drawing).
           </div>
         </div>
-
-        {costZones.length > 0 ? (
-          <div className="section">
-            <label>Adjust cost zones</label>
-            {costZones.map((z) => (
-              <div key={z.id} style={{ marginBottom: 10 }}>
-                <div className="small"><b>{z.name}</b></div>
-                <input
-                  type="number"
-                  min={0.1}
-                  max={50}
-                  step={0.1}
-                  value={z.multiplier}
-                  onChange={(e) => {
-                    const v = clamp(parseFloat(e.target.value), 0.1, 50);
-                    setZones((prev) => prev.map((p) => (p.id === z.id && p.type === 'COST' ? { ...p, multiplier: v } : p)));
-                  }}
-                />
-              </div>
-            ))}
-            <div className="small">(Deletion/editing geometry happens via the map draw controls for now.)</div>
-          </div>
-        ) : null}
 
         <div className="section">
           <label>Start / Goal</label>
