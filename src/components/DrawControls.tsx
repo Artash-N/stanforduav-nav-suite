@@ -157,6 +157,19 @@ export function DrawControls(props: {
       dblZoomWasEnabled = map.doubleClickZoom.enabled();
       map.doubleClickZoom.disable();
       blockDoubleClicks = true;
+
+      const activeHandler = (drawControl as any)?._toolbars?.draw?._activeMode?.handler;
+      const polygonHandler = (L as any).Draw?.Polygon;
+      if (activeHandler && polygonHandler && activeHandler instanceof polygonHandler) {
+        activeHandler._updateFinishHandler = () => {};
+        if (Array.isArray(activeHandler._markers)) {
+          activeHandler._markers.forEach((marker: any) => {
+            if (!marker?.off) return;
+            marker.off('click', activeHandler._finishShape, activeHandler);
+            marker.off('dblclick', activeHandler._finishShape, activeHandler);
+          });
+        }
+      }
     };
     const onDrawStop = () => {
       blockDoubleClicks = false;
