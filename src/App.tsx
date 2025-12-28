@@ -133,6 +133,7 @@ export default function App() {
     runtimeMs: number;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const defaultStateLoadedRef = useRef(false);
   const [newCostTypeName, setNewCostTypeName] = useState<string>('');
   const [newCostTypeMultiplier, setNewCostTypeMultiplier] = useState<number>(1.2);
   const [waypointColors, setWaypointColors] = useState<string[]>([]);
@@ -221,6 +222,30 @@ export default function App() {
   useEffect(() => {
     reloadAlgorithms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (defaultStateLoadedRef.current) return;
+    defaultStateLoadedRef.current = true;
+
+    const loadDefaults = async () => {
+      try {
+        const response = await fetch('/defaults/stanford-map.json');
+        if (!response.ok) {
+          throw new Error(`Failed to load default map (${response.status}).`);
+        }
+        const parsed = await response.json();
+        const next = parseMapState(parsed);
+        if (!next) {
+          throw new Error('Default map JSON is invalid.');
+        }
+        applyMapState(next);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    loadDefaults();
   }, []);
 
 
@@ -398,6 +423,30 @@ export default function App() {
   function onWaypointColorSelect(color: string) {
     setSelectedWaypointColor(color);
     setWaypointColors((prev) => prev.map(() => color));
+  }
+
+  function applyMapState(next: ParsedMapState) {
+    setZones(
+      next.zones.map((zone) => {
+        if (zone.type === 'NO_FLY') {
+          const buffered = turf.buffer(zone.shape as any, next.noFlyBufferM, { units: 'meters' }) as any;
+          return { ...zone, buffered } as Zone;
+        }
+        return { ...zone } as Zone;
+      })
+    );
+    setStart(next.start);
+    setGoal(next.goal);
+    setPlanningBounds(next.planningBounds);
+    setResolutionM(next.resolutionM);
+    setBasemap(next.basemap);
+    setNoFlyBufferM(next.noFlyBufferM);
+    setAvoidHighMultiplier(next.avoidHighMultiplier);
+    setRolloffDistanceM(next.rolloffDistanceM);
+    setCostZoneTypes(next.costZoneTypes);
+    setDrawMode(next.drawMode);
+    setPlacementMode(null);
+    setRunResult(null);
   }
 
   async function runAlgorithm() {
@@ -603,27 +652,7 @@ export default function App() {
                   alert('Invalid map state file.');
                   return;
                 }
-                setZones(
-                  next.zones.map((zone) => {
-                    if (zone.type === 'NO_FLY') {
-                      const buffered = turf.buffer(zone.shape as any, next.noFlyBufferM, { units: 'meters' }) as any;
-                      return { ...zone, buffered } as Zone;
-                    }
-                    return { ...zone } as Zone;
-                  })
-                );
-                setStart(next.start);
-                setGoal(next.goal);
-                setPlanningBounds(next.planningBounds);
-                setResolutionM(next.resolutionM);
-                setBasemap(next.basemap);
-                setNoFlyBufferM(next.noFlyBufferM);
-                setAvoidHighMultiplier(next.avoidHighMultiplier);
-                setRolloffDistanceM(next.rolloffDistanceM);
-                setCostZoneTypes(next.costZoneTypes);
-                setDrawMode(next.drawMode);
-                setPlacementMode(null);
-                setRunResult(null);
+                applyMapState(next);
               } catch (e: any) {
                 alert(`Failed to load map state.\n\n${e?.message ?? e}`);
               }
