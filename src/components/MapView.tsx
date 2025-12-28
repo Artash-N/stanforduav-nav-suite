@@ -230,7 +230,7 @@ export function MapView(props: {
 
       {props.showWaypoints
         ? props.waypointLatLngs.map((point, index) => {
-            const waypointColor = props.waypointColors[index] ?? '#f08c00';
+            const waypointColor = props.waypointColors[index] ?? '#d6336c';
             return (
               <Marker
                 key={`wp-${index}-${point.lat.toFixed(5)}-${point.lng.toFixed(5)}`}
