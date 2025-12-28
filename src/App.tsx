@@ -116,10 +116,10 @@ export default function App() {
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
   const [showWaypoints, setShowWaypoints] = useState<boolean>(false);
   const [selectedWaypointColor, setSelectedWaypointColor] = useState<string>(DEFAULT_WAYPOINT_COLOR);
-  const [useShortcutting, setUseShortcutting] = useState<boolean>(false);
-  const [shortcuttingMultiplierTolerance, setShortcuttingMultiplierTolerance] = useState<number>(0);
-  const [usePathAveraging, setUsePathAveraging] = useState<boolean>(false);
-  const [pathAveragingDistanceM, setPathAveragingDistanceM] = useState<number>(5);
+  const [useShortcutting, setUseShortcutting] = useState<boolean>(true);
+  const [shortcuttingMultiplierTolerance, setShortcuttingMultiplierTolerance] = useState<number>(10);
+  const [usePathAveraging, setUsePathAveraging] = useState<boolean>(true);
+  const [pathAveragingDistanceM, setPathAveragingDistanceM] = useState<number>(40);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
   const [runResult, setRunResult] = useState<{
@@ -519,6 +519,7 @@ export default function App() {
   return (
     <div className="app">
       <div className="sidebar">
+        <div className="small">By Artash Nath</div>
         <h1>Stanford UAV Nav Suite</h1>
         <div className="small">
           Draw zones on the map, set start/goal, then run a Python algorithm.
