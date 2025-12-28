@@ -86,7 +86,7 @@ const WAYPOINT_COLOR_OPTIONS = [
   { name: 'Magenta', color: '#d6336c' },
   { name: 'Green', color: '#2f9e44' }
 ];
-const DEFAULT_WAYPOINT_COLOR = '#f08c00';
+const DEFAULT_WAYPOINT_COLOR = '#d6336c';
 
 export default function App() {
   const [resolutionM, setResolutionM] = useState<number>(10);
@@ -114,7 +114,7 @@ export default function App() {
 
   const [showVisited, setShowVisited] = useState<boolean>(false);
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
-  const [showWaypoints, setShowWaypoints] = useState<boolean>(false);
+  const [showWaypoints, setShowWaypoints] = useState<boolean>(true);
   const [selectedWaypointColor, setSelectedWaypointColor] = useState<string>(DEFAULT_WAYPOINT_COLOR);
   const [useShortcutting, setUseShortcutting] = useState<boolean>(true);
   const [shortcuttingMultiplierTolerance, setShortcuttingMultiplierTolerance] = useState<number>(10);
@@ -136,6 +136,24 @@ export default function App() {
   const [newCostTypeName, setNewCostTypeName] = useState<string>('');
   const [newCostTypeMultiplier, setNewCostTypeMultiplier] = useState<number>(1.2);
   const [waypointColors, setWaypointColors] = useState<string[]>([]);
+
+  const handleExportWaypoints = () => {
+    const payload = {
+      start,
+      waypoints: waypointLatLngs,
+      end: goal
+    };
+    const data = JSON.stringify(payload, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'waypoints.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const costTypeById = useMemo(() => {
     return new Map(costZoneTypes.map((type) => [type.id, type]));
@@ -1011,6 +1029,14 @@ export default function App() {
               ) : null}
             </div>
           ) : null}
+        </div>
+
+        <div className="section">
+          <label>Waypoints</label>
+          <button type="button" onClick={handleExportWaypoints}>
+            Export Waypoints
+          </button>
+          <div className="small">Download start, waypoint, and end coordinates as JSON.</div>
         </div>
       </div>
 
