@@ -52,6 +52,10 @@ class GridProblemModel(BaseModel):
 class RunOptionsModel(BaseModel):
     return_visited: bool = False
     max_visited: int = Field(default=50000, ge=0)
+    wind_enabled: bool = False
+    wind_direction_deg: float = 0.0
+    wind_speed_ms: float = 0.0
+    drone_airspeed_ms: float = 10.0
 
 
 class RunRequestModel(BaseModel):
@@ -120,7 +124,14 @@ def run(req: RunRequestModel) -> RunResponseModel:
     )
 
     opts = req.options or RunOptionsModel()
-    run_opts = RunOptions(return_visited=opts.return_visited, max_visited=opts.max_visited)
+    run_opts = RunOptions(
+        return_visited=opts.return_visited,
+        max_visited=opts.max_visited,
+        wind_enabled=opts.wind_enabled,
+        wind_direction_deg=opts.wind_direction_deg,
+        wind_speed_ms=opts.wind_speed_ms,
+        drone_airspeed_ms=opts.drone_airspeed_ms
+    )
 
     t0 = time.perf_counter()
     try:

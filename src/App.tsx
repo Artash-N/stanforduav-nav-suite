@@ -114,6 +114,11 @@ export default function App() {
 
   const [showVisited, setShowVisited] = useState<boolean>(false);
   const [showCostHeatmap, setShowCostHeatmap] = useState<boolean>(false);
+
+  const [windEnabled, setWindEnabled] = useState<boolean>(false);
+  const [windDirection, setWindDirection] = useState<number>(0);
+  const [windSpeed, setWindSpeed] = useState<number>(0);
+  const [droneAirspeed, setDroneAirspeed] = useState<number>(10);
   const [showWaypoints, setShowWaypoints] = useState<boolean>(true);
   const [selectedWaypointColor, setSelectedWaypointColor] = useState<string>(DEFAULT_WAYPOINT_COLOR);
   const [useShortcutting, setUseShortcutting] = useState<boolean>(true);
@@ -504,7 +509,11 @@ export default function App() {
         },
         options: {
           return_visited: showVisited,
-          max_visited: 50000
+          max_visited: 50000,
+          wind_enabled: windEnabled,
+          wind_direction_deg: windDirection,
+          wind_speed_ms: windSpeed,
+          drone_airspeed_ms: droneAirspeed
         }
       });
       const t1 = performance.now();
@@ -930,6 +939,52 @@ export default function App() {
             </button>
           </div>
 
+          <label style={{ marginTop: 16 }}>
+            <input
+              type="checkbox"
+              checked={windEnabled}
+              onChange={(e) => setWindEnabled(e.target.checked)}
+              style={{ width: 'auto', marginRight: 8 }}
+            />
+            Enable wind
+          </label>
+
+          {windEnabled && (
+            <>
+              <label>Wind direction (°): {windDirection}</label>
+              <input
+                type="range"
+                min="0"
+                max="360"
+                value={windDirection}
+                onChange={(e) => setWindDirection(Number(e.target.value))}
+                disabled={!windEnabled}
+              />
+
+              <label>Wind speed (m/s): {windSpeed}</label>
+              <input
+                type="range"
+                min="0"
+                max="30"
+                step="0.5"
+                value={windSpeed}
+                onChange={(e) => setWindSpeed(Number(e.target.value))}
+                disabled={!windEnabled}
+              />
+
+              <label>Drone airspeed (m/s): {droneAirspeed}</label>
+              <input
+                type="range"
+                min="1"
+                max="30"
+                step="1"
+                value={droneAirspeed}
+                onChange={(e) => setDroneAirspeed(Number(e.target.value))}
+                disabled={!windEnabled}
+              />
+            </>
+          )}
+
           <div className="row">
             <button
               disabled={!raster.env || !!raster.error || !start || !goal || !algorithmId || !!algoError || isRunning}
@@ -1098,6 +1153,10 @@ export default function App() {
         showVisited={showVisited}
         showCostHeatmap={showCostHeatmap}
         showWaypoints={showWaypoints}
+
+        windEnabled={windEnabled}
+        windDirection={windDirection}
+        windSpeed={windSpeed}
       />
     </div>
   );
