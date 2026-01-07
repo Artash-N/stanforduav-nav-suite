@@ -299,10 +299,19 @@ export default function App() {
   }, [runResult, raster.env, useShortcutting, shortcuttingMultiplierTolerance]);
 
   const pathPointsM = useMemo<{ xM: number; yM: number }[]>(() => {
-    if (pathCells.length === 0) return [];
+    // If we have no path, return empty
+    if (!runResult?.res.path || runResult.res.path.length === 0) return [];
     if (!raster.env) return [];
-    return pathCells.map((id) => raster.env.cellCenter(id));
-  }, [pathCells, raster.env]);
+
+    // If shortcutting is OFF, just return the center of every cell (Old behavior)
+    if (!useShortcutting) {
+      return runResult.res.path.map((id) => raster.env!.cellCenter(id));
+    }
+
+    // If shortcutting is ON, run the Funnel Algorithm
+    // This returns smooth coordinates (meters) directly
+    return applyFunnelAlgorithm(raster.env, runResult.res.path);
+  }, [runResult, raster.env, useShortcutting]);
 
   const averagedPathPointsM = useMemo<{ xM: number; yM: number }[]>(() => {
     if (!useShortcutting || !usePathAveraging) return pathPointsM;
@@ -1438,4 +1447,139 @@ function hasLineOfSight(
       y0 += sy;
     }
   }
+}
+
+// --- FUNNEL ALGORITHM IMPLEMENTATION ---
+
+type Point = { x: number; y: number };
+
+/**
+ * Applies the Simple Stupid Funnel Algorithm (SSFA) to a grid path.
+ * Returns a list of smooth coordinates in meters.
+ */
+function applyFunnelAlgorithm(env: GridEnvironment, pathIds: number[]): { xM: number; yM: number }[] {
+  if (pathIds.length < 2) {
+    return pathIds.map((id) => env.cellCenter(id));
+  }
+
+  const portals = getPortals(env, pathIds);
+  const path: Point[] = [];
+
+  // Init funnel
+  let portalApex = portals[0].left;
+  let portalLeft = portals[0].left;
+  let portalRight = portals[0].right;
+
+  let leftIndex = 0;
+  let rightIndex = 0;
+
+  path.push(portalApex);
+
+  for (let i = 1; i < portals.length; i++) {
+    const left = portals[i].left;
+    const right = portals[i].right;
+
+    // Update Right Side
+    if (triArea2(portalApex, portalRight, right) <= 0.0) {
+      if (portalApex === portalRight || triArea2(portalApex, portalLeft, right) > 0.0) {
+        // Tighten the funnel
+        portalRight = right;
+        rightIndex = i;
+      } else {
+        // Right crossed Left -> New Apex at Left
+        path.push(portalLeft);
+        portalApex = portalLeft;
+        portalLeft = portalApex;
+        portalRight = portalApex;
+        i = leftIndex;
+        continue;
+      }
+    }
+
+    // Update Left Side
+    if (triArea2(portalApex, portalLeft, left) >= 0.0) {
+      if (portalApex === portalLeft || triArea2(portalApex, portalRight, left) < 0.0) {
+        // Tighten the funnel
+        portalLeft = left;
+        leftIndex = i;
+      } else {
+        // Left crossed Right -> New Apex at Right
+        path.push(portalRight);
+        portalApex = portalRight;
+        portalLeft = portalApex;
+        portalRight = portalApex;
+        i = rightIndex;
+        continue;
+      }
+    }
+  }
+
+  // Add the final goal point
+  path.push(portals[portals.length - 1].left);
+
+  return path.map((p) => ({ xM: p.x, yM: p.y }));
+}
+
+/**
+ * Calculates the cross product (z-component) of vectors (b-a) and (c-a).
+ * Used to check winding order (left vs right turn).
+ */
+function triArea2(a: Point, b: Point, c: Point): number {
+  const ax = b.x - a.x;
+  const ay = b.y - a.y;
+  const bx = c.x - a.x;
+  const by = c.y - a.y;
+  return bx * ay - ax * by;
+}
+
+/**
+ * Converts a list of grid cell IDs into a sequence of "Portals" (left and right edges).
+ */
+function getPortals(env: GridEnvironment, path: number[]): { left: Point; right: Point }[] {
+  const portals: { left: Point; right: Point }[] = [];
+  const cs = env.cellSizeM;
+
+  // 1. Start Point (Center of first cell)
+  const startC = env.cellCenter(path[0]);
+  const startPt = { x: startC.xM, y: startC.yM };
+  portals.push({ left: startPt, right: startPt });
+
+  // 2. Iterate path edges
+  for (let i = 0; i < path.length - 1; i++) {
+    const curr = env.colRow(path[i]);
+    const next = env.colRow(path[i + 1]);
+
+    const dx = next.col - curr.col;
+    const dy = next.row - curr.row;
+
+    // Cell bounds
+    const minX = env.bounds.minX + curr.col * cs;
+    const maxX = minX + cs;
+    const minY = env.bounds.minY + curr.row * cs;
+    const maxY = minY + cs;
+
+    // Determine portal based on exit direction
+    // Assuming standard Cartesian (Row 0 is Bottom, Row++ goes Up)
+    if (dx === 1 && dy === 0) { // EAST
+      portals.push({ left: { x: maxX, y: maxY }, right: { x: maxX, y: minY } });
+    } else if (dx === -1 && dy === 0) { // WEST
+      portals.push({ left: { x: minX, y: minY }, right: { x: minX, y: maxY } });
+    } else if (dx === 0 && dy === 1) { // NORTH
+      portals.push({ left: { x: minX, y: maxY }, right: { x: maxX, y: maxY } });
+    } else if (dx === 0 && dy === -1) { // SOUTH
+      portals.push({ left: { x: maxX, y: minY }, right: { x: minX, y: minY } });
+    } else {
+      // Diagonal: technically a 0-width portal at the vertex
+      const vx = dx > 0 ? maxX : minX;
+      const vy = dy > 0 ? maxY : minY;
+      portals.push({ left: { x: vx, y: vy }, right: { x: vx, y: vy } });
+    }
+  }
+
+  // 3. End Point (Center of last cell)
+  const endC = env.cellCenter(path[path.length - 1]);
+  const endPt = { x: endC.xM, y: endC.yM };
+  portals.push({ left: endPt, right: endPt });
+
+  return portals;
 }
