@@ -8,6 +8,7 @@ import type { CostZoneType, LatLng, LatLngBounds, Zone } from '../types';
 import { DrawControls, MapClickHandler, type DrawControlsMode } from './DrawControls';
 import { CanvasCellsLayer, CanvasCostHeatmapLayer } from './visitedLayer';
 import type { GridEnvironment } from '../env/GridEnvironment';
+import { WindCompass } from './WindArrow';
 
 export function MapView(props: {
   zones: Zone[];
@@ -38,6 +39,10 @@ export function MapView(props: {
   showVisited: boolean;
   showCostHeatmap: boolean;
   showWaypoints: boolean;
+
+  windEnabled: boolean;
+  windDirection: number;
+  windSpeed: number;
 }) {
   const [featureGroup, setFeatureGroup] = useState<L.FeatureGroup | null>(null);
   const costTypeById = useMemo(() => {
@@ -157,11 +162,12 @@ export function MapView(props: {
   }, [props.basemap]);
 
   return (
-    <MapContainer
-      className="map"
-      center={center}
-      zoom={16}
-      scrollWheelZoom={true}
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <MapContainer
+        className="map"
+        center={center}
+        zoom={16}
+        scrollWheelZoom={true}
       whenReady={(m) => {
         const map = m.target as L.Map;
         const b = map.getBounds();
@@ -250,5 +256,12 @@ export function MapView(props: {
         showVisited={props.showVisited}
       />
     </MapContainer>
+
+    <WindCompass
+      windEnabled={props.windEnabled}
+      windDirection={props.windDirection}
+      windSpeed={props.windSpeed}
+    />
+    </div>
   );
 }

@@ -26,6 +26,10 @@ export interface GridProblemPayload {
 export interface RunOptions {
   return_visited?: boolean;
   max_visited?: number;
+  wind_enabled?: boolean;
+  wind_direction_deg?: number;
+  wind_speed_ms?: number;
+  drone_airspeed_ms?: number;
 }
 
 export interface RunRequest {

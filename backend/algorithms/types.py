@@ -28,6 +28,10 @@ class GridBoundsMeters:
 class RunOptions:
     return_visited: bool = False
     max_visited: int = 50000
+    wind_enabled: bool = False
+    wind_direction_deg: float = 0.0
+    wind_speed_ms: float = 0.0
+    drone_airspeed_ms: float = 10.0
 
 
 @dataclass
